@@ -1,5 +1,13 @@
 #!/bin/bash
 
+
+#bash <(curl -s https://raw.githubusercontent.com/atedim/zz/main/zz_instala)
+
+
+
+# Ajusta data e hora do sistema
+ntpdate pool.ntp.org >> /dev/null
+
 # Configurações dos caminhos
 caminho_repositorio="https://raw.githubusercontent.com/atedim/zz/main"
 #caminho_scripts="/etc/scripts"
@@ -31,7 +39,8 @@ fi
 # Ajusta permissoes
 chmod -R 777 $caminho_scripts
 chmod -R 777 $caminho_bkp
-
+chown root:root -R $caminho_scripts
+chown root:root -R $caminho_bkp
 
 # Ler cada linha de list.conf e baixar os arquivos
 while read -r arquivo; do
@@ -55,5 +64,13 @@ while read -r arquivo; do
         echo "Arquivo $arquivo atualizado e configurado em $caminho_scripts."
     fi
 done < "$progs"
+
+
+# Ajusta permissoes
+chmod -R 777 $caminho_scripts
+chmod -R 777 $caminho_bkp
+chown root:root -R $caminho_scripts
+chown root:root -R $caminho_bkp
+
 
 echo "Processo concluído."
