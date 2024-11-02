@@ -10,10 +10,10 @@ ntpdate pool.ntp.org >> /dev/null
 
 # Configurações dos caminhos
 caminho_repositorio="https://raw.githubusercontent.com/atedim/zz/main"
-#caminho_scripts="/etc/scripts"
-#caminho_bkp="/etc/scripts/old"
-caminho_scripts="/etc/test"
-caminho_bkp="/etc/test/old"
+caminho_scripts="/etc/scripts"
+caminho_bkp="/etc/scripts/old"
+#caminho_scripts="/etc/test"
+#caminho_bkp="/etc/test/old"
 
 
 DATA=$(date +%d%m%Y)
