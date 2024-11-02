@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# Configurações dos caminhos
+caminho_repositorio="https://raw.githubusercontent.com/atedim/zz/main"
+#caminho_scripts="/etc/scripts"
+#caminho_bkp="/etc/scripts/old"
+caminho_scripts="/etc/test"
+caminho_bkp="/etc/test/old"
+
+
+DATA=$(date +%d%m%Y)
+progs="$caminho_scripts/list.conf"
+
+# Verificar e criar pastas caso não existam
+[ ! -d "$caminho_scripts" ] && mkdir -p "$caminho_scripts"
+[ ! -d "$caminho_bkp" ] && mkdir -p "$caminho_bkp"
+
+# Baixar o arquivo list.conf
+curl -s "$caminho_repositorio/list.conf" -o "$progs"
+if [ $? -ne 0 ]; then
+    echo "Erro ao baixar list.conf. Verifique o repositório ou a conexão."
+    exit 1
+fi
+
+# Verificar se list.conf existe
+if [ ! -f "$progs" ]; then
+    echo "Arquivo $progs não encontrado."
+    exit 1
+fi
+
+# Ajusta permissoes
+chmod -R 777 $caminho_scripts
+chmod -R 777 $caminho_bkp
+
+
+# Ler cada linha de list.conf e baixar os arquivos
+while read -r arquivo; do
+    if [ -n "$arquivo" ]; then
+        # Caminho completo do arquivo no diretório de scripts
+        arquivo_destino="$caminho_scripts/$arquivo"
+
+        # Verificar se o arquivo já existe
+        if [ -f "$arquivo_destino" ]; then
+            # Mover o arquivo antigo para a pasta de backup com a data
+            mv "$arquivo_destino" "$caminho_bkp/$DATA.$arquivo.old"
+            chmod u-x "$caminho_bkp/$DATA.$arquivo.old"
+        fi
+
+        # Baixar o novo arquivo do repositório
+        curl -s "$caminho_repositorio/$arquivo" -o "$arquivo_destino"
+        
+        # Tornar o novo arquivo executável
+        chmod u+x "$arquivo_destino"
+        
+        echo "Arquivo $arquivo atualizado e configurado em $caminho_scripts."
+    fi
+done < "$progs"
+
+echo "Processo concluído."
