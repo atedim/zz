@@ -167,7 +167,7 @@ verificar_e_montar_localidade() {
     local ponto_montagem=$4
     if ! mountpoint -q "$ponto_montagem"; then
         echo "Montando $localidade em $ponto_montagem..."
-        mount.cifs "$localidade" "$ponto_montagem" -o username="$usuario",password="$senha" > /dev/null 2>&1
+        mount.cifs "$localidade" "$ponto_montagem" -o username="$usuario",password="$senha",noserverino> /dev/null 2>&1
         if [ $? -ne 0 ]; then
             echo "Erro: Nao foi possivel montar $localidade em $ponto_montagem."
             exit 1
@@ -205,7 +205,7 @@ if [ -e "$arquivo_controle" ]; then
 	else
        echo "Erro na sincronização com rsync. Verifique o log para mais detalhes: $log_sync"
 	fi
-        
+
     else
         echo "Verificacoes de conteudo ou MD5 falharam."
     fi
