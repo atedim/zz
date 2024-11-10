@@ -1,0 +1,237 @@
+#!/bin/bash
+
+# zz_sync improved 22/10/2024
+# Sincronizacao de 2 pontos com protecao contra ransomware
+
+# Exemplo de arquivo de config
+# [hostname1]
+# IP=xxx.xxx.xxx.xxx
+# share=/exemplo/
+# user=aaaaaaa
+# pass=bbbbbbb
+# exclude=
+#
+# [hostname2]
+# IP=xxx.xxx.xxx.xxx
+# share=/exemplo/
+# user=aaaaaaa
+# pass=bbbbbbb
+# exclude=sup
+
+# uso:
+# zz_sync origem destino 
+# zz_sync listar: Permite visualizar o conteudo completo do arquivo de configuracao ao executar o comando zz_sync listar.
+# zz_sync decide: Permite a escolha da origem e destino interativamente.
+
+# Define local do arquivo de configuracao
+config_file="/etc/scripts/zz_sync.conf"
+
+# Funcao para listar o conteudo completo do arquivo de configuracao
+listar_configuracoes_completo() {
+    if [ -f "$config_file" ]; then
+        echo "conteudo do arquivo $config_file:"
+        cat "$config_file"
+    else
+        echo "Arquivo de configuracao '$config_file' nao encontrado!"
+        exit 1
+    fi
+}
+
+# Funcao para listar o conteudo do arquivo de configuracao com numerais sequenciais (1, 2, 3...)
+listar_configuracoes_numeradas() {
+    if [ -f "$config_file" ]; then
+        awk -F'[][]' '/\[.*\]/ {print ++i ": " $2}' "$config_file"
+    else
+        echo "Arquivo de configuracao '$config_file' nao encontrado!"
+        exit 1
+    fi
+}
+
+# Funcao para obter o hostname a partir do numero
+obter_hostname_por_numero() {
+    local numero=$1
+    hostname=$(awk -F'[][]' '/\[.*\]/ {print $2}' "$config_file" | sed -n "${numero}p")
+    if [ -z "$hostname" ]; then
+        echo "Erro: numero invalido. Nao foi possivel obter o hostname."
+        exit 1
+    fi
+    echo "$hostname"
+}
+
+# Funcao para ler os parametros do arquivo de configuracao
+get_config() {
+    local host=$1
+    IP=$(awk -F'=' -v host="[$host]" '$0 == host {flag=1} flag && /IP/ {print $2; exit}' "$config_file")
+    share=$(awk -F'=' -v host="[$host]" '$0 == host {flag=1} flag && /share/ {print $2; exit}' "$config_file")
+    user=$(awk -F'=' -v host="[$host]" '$0 == host {flag=1} flag && /user/ {print $2; exit}' "$config_file")
+    pass=$(awk -F'=' -v host="[$host]" '$0 == host {flag=1} flag && /pass/ {print $2; exit}' "$config_file")
+    exclude=$(awk -F'=' -v host="[$host]" '$0 == host {flag=1} flag && /exclude/ {print $2; exit}' "$config_file")
+
+    if [ -z "$IP" ] || [ -z "$share" ] || [ -z "$user" ] || [ -z "$pass" ]; then
+        echo "Erro: Nao foi possivel obter as informacoes de configuracao para o host '$host'"
+        exit 1
+    fi
+}
+
+# Funcao para decidir origem e destino
+decide_origem_destino() {
+    listar_configuracoes_numeradas
+
+    echo "Escolha o numero da origem: "
+    read -r num_origem
+    origem=$(obter_hostname_por_numero "$num_origem")
+
+    echo "Escolha o numero do destino: "
+    read -r num_destino
+    destino=$(obter_hostname_por_numero "$num_destino")
+}
+
+# Verifica se o parametro "listar" foi passado
+if [ "$1" == "listar" ]; then
+    echo
+    listar_configuracoes_completo
+    echo
+    exit 0
+fi
+
+# Verifica se o parametro "decide" foi passado
+if [ "$1" == "decide" ]; then
+    decide_origem_destino
+else
+    # Verifica se os parametros origem e destino foram passados
+    if [ "$#" -ne 2 ]; then
+        echo
+        echo "Uso: "
+        echo "$0 origem destino"
+        echo "$0 listar "
+        echo "$0 decide"
+        echo
+        exit 1
+    fi
+    origem=$1
+    destino=$2
+fi
+
+# Verifica se o arquivo de configuracao existe
+if [ ! -f "$config_file" ]; then
+    echo "Arquivo de configuracao '$config_file' nao encontrado!"
+    exit 1
+fi
+
+# Verifica se cifs-utils esta instalado
+if ! command -v mount.cifs &> /dev/null; then
+    echo "O programa mount.cifs nao esta instalado. Por favor, instale antes de prosseguir."
+    echo "Para sistemas baseados em Debian/Ubuntu, você pode instalar com: sudo apt install cifs-utils"
+    exit 1
+fi
+
+# Lê as informacoes de configuracao da origem e destino
+get_config "$origem"
+origem_IP=$IP
+origem_share=$share
+origem_user=$user
+origem_pass=$pass
+origem_exclude=$exclude
+
+get_config "$destino"
+destino_IP=$IP
+destino_share=$share
+destino_user=$user
+destino_pass=$pass
+destino_exclude=$exclude
+
+# Localidades (caminhos CIFS)
+localidade1="//${origem_IP}${origem_share}"
+localidade2="//${destino_IP}${destino_share}"
+
+# Pontos de montagem atualizados
+ponto_montagem_origem="/mnt/origem"
+ponto_montagem_destino="/mnt/destino"
+
+# Verifica se os pontos de montagem existem, se nao, cria-os
+if [ ! -d "$ponto_montagem_origem" ]; then
+    echo "Criando ponto de montagem: $ponto_montagem_origem"
+    mkdir -p "$ponto_montagem_origem"
+fi
+
+if [ ! -d "$ponto_montagem_destino" ]; then
+    echo "Criando ponto de montagem: $ponto_montagem_destino"
+    mkdir -p "$ponto_montagem_destino"
+fi
+
+# Funcao para verificar se a localidade esta disponivel e monta-la se necessario
+verificar_e_montar_localidade() {
+    local localidade=$1
+    local usuario=$2
+    local senha=$3
+    local ponto_montagem=$4
+    if ! mountpoint -q "$ponto_montagem"; then
+        echo "Montando $localidade em $ponto_montagem..."
+        mount.cifs "$localidade" "$ponto_montagem" -o username="$usuario",password="$senha",noserverino > /dev/null 2>&1
+        if [ $? -ne 0 ]; then
+            echo "Erro: Nao foi possivel montar $localidade em $ponto_montagem."
+            exit 1
+        fi
+    fi
+}
+
+# Verificar e montar as localidades
+verificar_e_montar_localidade "$localidade1" "$origem_user" "$origem_pass" "$ponto_montagem_origem"
+verificar_e_montar_localidade "$localidade2" "$destino_user" "$destino_pass" "$ponto_montagem_destino"
+
+# Define o local do log com base na origem e destino
+log_sync="/etc/scripts/sync.log"
+
+# Verificar o arquivo de controle
+arquivo_controle="$ponto_montagem_origem/controle.txt"
+conteudo_teste="estearquivonaofoialterado"
+md5_teste="4fb5aeb052fafcbefdafdaa374df3e44"
+
+if [ -e "$arquivo_controle" ]; then
+    conteudo_atual=$(cat "$arquivo_controle")
+    md5_atual=$(md5sum "$arquivo_controle" | awk '{print $1}')
+
+    # Verificar conteudo e MD5
+    if [ "$conteudo_atual" = "$conteudo_teste" ] && [ "$md5_atual" = "$md5_teste" ]; then
+        echo "Verificacoes de conteudo e MD5 bem-sucedidas. Iniciando rsync..."
+
+        # Comando rsync com a exclusao de pastas, se especificado
+        if [ -n "$origem_exclude" ]; then
+            rsync -av --delete --exclude-from="$origem_exclude" "$ponto_montagem_origem/" "$ponto_montagem_destino/" > "$log_sync" 2>&1
+        else
+            rsync -av --delete "$ponto_montagem_origem/" "$ponto_montagem_destino/" > "$log_sync" 2>&1
+        fi
+
+        if [ $? -eq 0 ]; then
+            echo "Sincronizacao concluida com sucesso. Detalhes no log: $log_sync"
+        else
+            echo "Erro durante a sincronizacao. Verifique o log: $log_sync"
+        fi
+    else
+        echo "Verificacao de conteudo e MD5 falhou. Abortando a sincronizacao."
+    fi
+else
+    echo "Arquivo de controle nao encontrado. Abortando a sincronizacao."
+fi
+
+# Funcao para tentar desmontar
+desmontar() {
+    local ponto=$1
+    umount -f "$ponto"
+    sleep 2
+    if mount | grep -q "$ponto"; then
+        echo "Primeira tentativa de desmontagem falhou para $ponto. Tentando novamente..."
+        umount -f "$ponto"
+        sleep 2
+    fi
+
+    if mount | grep -q "$ponto"; then
+        echo "Erro: Nao foi possivel desmontar $ponto."
+    else
+        echo "Ponto de montagem $ponto desmontado com sucesso."
+    fi
+}
+
+# Desmonta os pontos de montagem de origem e destino
+desmontar "$ponto_montagem_origem"
+desmontar "$ponto_montagem_destino"
