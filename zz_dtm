@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# zz_dtm
+# Script para sincronizar backups do DTM usando o RCLONE
+# ver 0.01 12/11/2024 
+
+
+# Definição de variáveis
+perfil="DTM:"                       						# Perfil de origem no rclone
+destino="/dados"                    						# Diretório de destino local
+periodo="--max-age 7d"             						# Período máximo de arquivos a sincronizar
+retry="--retries 3"                 						# Número de tentativas de sincronização
+lowretry="--low-level-retries 10"   						# Número de tentativas em nível baixo
+transf="--transfers 4"              						# Número de transferências simultâneas
+ordem="--order-by size"             						# Ordem de transferência por tamanho
+timeout="--timeout 1h"              						# Tempo limite para cada operação
+multi="--multi-thread-streams 0"    						# Desabilita múltiplos streams
+excluir="--exclude XMLeSocial/ZIP_OLDs/** --exclude XMLeSocial/retrobo/**" 	# Pastas a serem excluídas
+preserva="sim"                      						# Define se deve preservar o timestamp dos arquivos
+
+# Referencia
+#rclone sync DTM: /dados -P --max-age 12d --retries 3 --low-level-retries 10 --transfers 2 --order-by size --stats 1s --timeout 1h --multi-thread-streams 0 --exclude XMLeSocial/ZIP_OLDs/** --exclude XMLeSocial/retrobo/** --no-update-modtime
+
+# Verifica se deve adicionar a flag de preservação do timestamp
+if [ "$preserva" = "sim" ]; then
+    preserva_flag="--no-update-modtime"
+else
+    preserva_flag=""
+fi
+
+# Atualiza data e hora do sistema para execução adequada
+ntpdate -s pool.ntp.org >/dev/null 2>&1
+
+# Executa o comando rclone usando as variáveis definidas
+rclone sync "$perfil" "$destino" -P $periodo $retry $lowretry $transf $ordem --stats 1s $timeout $multi $excluir $preserva_flag
+
+
