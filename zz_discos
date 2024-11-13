@@ -1,0 +1,205 @@
+#!/bin/bash
+
+# Verifica se o script está sendo executado como root ou com sudo
+if [ "$EUID" -ne 0 ]; then
+    echo "Este script precisa ser executado como root ou usando sudo."
+    exit 1
+fi
+
+# zz_discos - Ferramenta para gerenciamento de discos
+clear
+
+# Exibe uma descrição inicial sobre o script
+echo "==========================================================================="
+echo "               Gerenciamento de Discos"
+echo "==========================================================================="
+echo "Este sistema permite realizar as seguintes ações:"
+echo "1. Criar nova partição em um disco e formatá-la."
+echo "2. Destruir dados de um disco especificado, usando sobrescrita segura."
+echo "3. Sair do sistema."
+echo "==========================================================================="
+echo "AVISO: Utilize este script com cautela, pois ele pode"
+echo "apagar dados de maneira irreversível."
+echo "==========================================================================="
+read -p "Digite o numero da opcao desejada: " opcao
+
+# Função para criar nova partição e formatar (zz_formata)
+criar_particao_formatar() {
+    # Verifica se o parted está instalado
+    if ! command -v parted &> /dev/null; then
+        clear
+        echo "O parted precisa estar instalado para executar este script."
+        exit 1
+    fi
+
+    # Lista os discos presentes no sistema
+    echo "Discos disponíveis no sistema:"
+    DISCOS=($(lsblk -dn -o NAME,SIZE,TYPE | grep disk | awk '{print "/dev/"$1}'))
+    for i in "${!DISCOS[@]}"; do
+        echo "$((i+1)) - ${DISCOS[i]}"
+    done
+
+    # Solicita a seleção do disco pelo número
+    while true; do
+        read -p "Selecione o número do disco (1-${#DISCOS[@]}): " NUMERO
+
+        # Verifica se a entrada não está vazia e se o número é válido
+        if [[ -n "$NUMERO" && "$NUMERO" =~ ^[0-9]+$ ]] && (( NUMERO >= 1 && NUMERO <= ${#DISCOS[@]} )); then
+            DISCO=${DISCOS[$((NUMERO-1))]}
+            break
+        else
+            echo "Entrada inválida. Por favor, insira um número entre 1 e ${#DISCOS[@]}."
+        fi
+    done
+
+    # Verifica se o disco está montado
+    MONTADO=$(lsblk -o MOUNTPOINT -nr "$DISCO" | grep -v "^$")
+
+    if [ -n "$MONTADO" ]; then
+        echo "O disco $DISCO está montado em $MONTADO. Tentando desmontar..."
+        umount "$DISCO"* 2>/dev/null
+        
+        # Verifica se o disco foi desmontado com sucesso
+        MONTADO=$(lsblk -o MOUNTPOINT -nr "$DISCO" | grep -v "^$")
+        if [ -n "$MONTADO" ]; then
+            echo "Erro: Não foi possível desmontar o disco $DISCO. Abortando."
+            exit 1
+        else
+            echo "Disco $DISCO desmontado com sucesso."
+        fi
+    else
+        echo "O disco $DISCO já está desmontado."
+    fi
+
+    # Solicita o nome do disco
+    read -p "Informe o nome do disco (label): " NOMEDODISCO
+
+    # Exibe o tamanho total utilizável do disco
+    TAMANHO_DISCO=$(lsblk -b -dn -o SIZE "$DISCO")
+    TAMANHO_DISCO_GB=$((TAMANHO_DISCO / 1024 / 1024 / 1024))
+    echo "O tamanho total utilizável do disco $DISCO é de $TAMANHO_DISCO_GB GB."
+
+    # Remove assinaturas anteriores
+    echo "Limpando o disco $DISCO..."
+    wipefs -a -f "$DISCO"
+
+    # Cria a partição GPT usando o parted
+    echo "Criando partição GPT no $DISCO..."
+    parted "$DISCO" mklabel gpt
+    parted "$DISCO" mkpart primary ext4 0% 100%
+
+    # Formata a partição com ext4
+    PARTICAO="${DISCO}1"
+    echo "Formatando a partição $PARTICAO com ext4..."
+    mkfs.ext4 -j -F "$PARTICAO" -m 0
+
+    # Define o label da partição após a formatação para garantir que seja aplicado
+    e2label "$PARTICAO" "$NOMEDODISCO"
+
+    # Solicita o ponto de montagem
+    while true; do
+        read -p "Informe o ponto de montagem para o disco $NOMEDODISCO: " PONTO_MONTAGEM
+
+        # Verifica se o ponto de montagem existe
+        if [ -d "$PONTO_MONTAGEM" ]; then
+            echo "Ponto de montagem $PONTO_MONTAGEM já existe."
+            break
+        else
+            read -p "Ponto de montagem $PONTO_MONTAGEM não existe. Deseja criá-lo? (s/n): " RESP
+            if [[ "$RESP" =~ ^[Ss]$ ]]; then
+                mkdir -p "$PONTO_MONTAGEM"
+                echo "Ponto de montagem $PONTO_MONTAGEM criado."
+                break
+            else
+                echo "Por favor, informe um ponto de montagem válido."
+            fi
+        fi
+    done
+
+    # Adiciona a linha ao /etc/fstab com comentário
+    echo "# Montagem automática do disco $NOMEDODISCO" >> /etc/fstab
+    echo "LABEL=$NOMEDODISCO $PONTO_MONTAGEM ext4 defaults 0 2" >> /etc/fstab
+
+    # Exibe mensagem de conclusão
+    echo "Disco $NOMEDODISCO formatado com sucesso no $PARTICAO e configurado para montagem em $PONTO_MONTAGEM."
+    echo "Verifique e confirme o FSTAB e faca as alteracoes necessarias antes de reiniciar o equipamento."
+}
+
+# Função para listar discos
+listar_dispositivos() {
+    echo "Dispositivos conectados:"
+    lsblk -d -o NAME,SIZE,MODEL | grep -E '^sd|^nvme'
+}
+
+# Função para selecionar disco com validação
+selecionar_disco() {
+    while true; do
+        echo "Digite o nome do dispositivo a ser limpo (ex: sda, sdb, nvme0n1):"
+        read -r DISCO
+        if [[ -n "$DISCO" ]] && lsblk -d | grep -q "^$DISCO"; then
+            break
+        else
+            echo "Dispositivo inválido ou não encontrado. Tente novamente."
+        fi
+    done
+}
+
+# Pergunta quantas vezes deseja sobrescrever o disco com validação
+perguntar_passes() {
+    while true; do
+        echo "Quantas vezes deseja sobrescrever o disco?"
+        read -r PASSES
+        if [[ "$PASSES" =~ ^[1-9][0-9]*$ ]]; then
+            break
+        else
+            echo "Número inválido. Por favor, insira um número maior que zero."
+        fi
+    done
+}
+
+# Confirmação antes de executar
+confirmar_execucao() {
+    echo -e "\nResumo das seleções:"
+    echo "Dispositivo selecionado: /dev/$DISCO"
+    echo "Número de sobrescritas (passes): $PASSES"
+    echo -e "\nATENÇÃO: Esta operação APAGARÁ todos os dados de /dev/$DISCO."
+    echo "Para confirmar, digite 'EUCONFIRMO' e pressione Enter:"
+    read -r CONFIRMACAO
+
+    if [[ "$CONFIRMACAO" != "EUCONFIRMO" ]]; then
+        echo "Confirmação incorreta. Operação cancelada."
+        exit 1
+    fi
+}
+
+# Função para limpar disco com /dev/urandom
+limpar_disco() {
+    for i in $(seq 1 "$PASSES"); do
+        echo "Passo $i de $PASSES: Limpando /dev/$DISCO..."
+        dd if=/dev/urandom of=/dev/"$DISCO" bs=1M status=progress
+        echo "Passo $i concluído."
+    done
+    echo "Limpeza de /dev/$DISCO concluída com $PASSES passes."
+}
+
+# Executa a função correspondente com base na escolha
+case $opcao in
+    1)
+        criar_particao_formatar
+        ;;
+    2)
+        listar_dispositivos
+        selecionar_disco
+        perguntar_passes
+        confirmar_execucao
+        limpar_disco
+        ;;
+    3)
+        echo "Saindo do sistema..."
+        exit 0
+        ;;
+    *)
+        echo "Opção inválida."
+        exit 1
+        ;;
+esac
