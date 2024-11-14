@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# Variáveis de configuração
+DIRETORIO_LIXEIRA="/dados/lixeira"  # Diretório raiz a ser limpo (inclui subdiretórios)
+TIPO_ARQUIVO="*.tmp"                # Tipo de arquivo temporário (ex: *.tmp, *.log)
+DIAS_ANTIGOS=30                      # Quantidade de dias para remoção de arquivos antigos
+
+# Função para limpar arquivos temporários
+limpa_tmp() {
+    echo "Limpando arquivos temporários do tipo $TIPO_ARQUIVO em $DIRETORIO_LIXEIRA e subdiretórios..."
+    find "$DIRETORIO_LIXEIRA" -type f -name "$TIPO_ARQUIVO" -print0 | xargs -0 -r rm -v
+}
+
+# Função para remover arquivos antigos
+remove_arquivos_antigos() {
+    echo "Removendo arquivos mais antigos que $DIAS_ANTIGOS dias em $DIRETORIO_LIXEIRA e subdiretórios..."
+    find "$DIRETORIO_LIXEIRA" -type f -mtime +$DIAS_ANTIGOS -print0 | xargs -0 -r rm -v
+}
+
+# Função para remover arquivos vazios (tamanho 0 KB)
+remove_arquivos_vazios() {
+    echo "Removendo arquivos com tamanho 0 KB em $DIRETORIO_LIXEIRA e subdiretórios..."
+    find "$DIRETORIO_LIXEIRA" -type f -size 0 -print0 | xargs -0 -r rm -v
+}
+
+# Função para remover todos os diretórios vazios em profundidade
+remove_diretorios_vazios() {
+    echo "Removendo todos os diretórios vazios em $DIRETORIO_LIXEIRA e subdiretórios de uma vez..."
+    find "$DIRETORIO_LIXEIRA" -depth -type d -empty -print0 | xargs -0 -r rm -rv
+}
+
+# Execução das funções na ordem otimizada
+limpa_tmp
+remove_arquivos_vazios
+remove_arquivos_antigos
+remove_diretorios_vazios
+
+echo "Limpeza concluída."
