@@ -1,0 +1,110 @@
+#!/bin/bash
+
+################################################################################
+# Script: zz_halt.sh
+# Descrição: Encerra processos específicos no sistema Linux com base em até 5 
+#            comandos fornecidos em variáveis. Permite encerrar automaticamente 
+#            com o parâmetro "certeza" ou com confirmação interativa do usuário.
+#
+# Funcionalidades:
+#  - Encerra processos que correspondem a comandos específicos.
+#  - Suporte para até 5 comandos configurados como variáveis.
+#  - Confirmação interativa antes de encerrar (exceto com o parâmetro "certeza").
+#  - Lista processos que não puderam ser encerrados.
+#  - Ignora variáveis de comando vazias.
+#
+# Uso:
+#  - Modo interativo (confirmação para cada processo):
+#    ./zz_halt.sh
+#
+#  - Modo automático (encerra sem confirmação):
+#    ./zz_halt.sh certeza
+#
+# Variáveis:
+#  - Configure até 5 comandos nos valores das variáveis COMANDO1 a COMANDO5.
+#  - Exemplo:
+#    COMANDO1="rsync -av --delete /mnt/origem/ /mnt/destino/"
+#    COMANDO2="outro_comando"
+#
+################################################################################
+
+# Definir até 5 comandos para buscar os processos
+COMANDO1="rsync -av --delete /mnt/origem/ /mnt/destino/"
+COMANDO2="rsync -av --delete /dr/ /mirror/"
+COMANDO3=""
+COMANDO4=""
+COMANDO5=""
+
+# Array com os comandos
+COMANDOS=("$COMANDO1" "$COMANDO2" "$COMANDO3" "$COMANDO4" "$COMANDO5")
+
+# Verifica se o script foi chamado com o parâmetro "certeza"
+CERTEZA=false
+if [ "$1" == "certeza" ]; then
+  CERTEZA=true
+fi
+
+# Variável para armazenar processos que não puderam ser encerrados
+NAO_ENCERRADOS=()
+
+# Função para encerrar processos com confirmação
+encerrar_processo() {
+  local PID=$1
+  local CMD=$2
+
+  if $CERTEZA; then
+    kill -9 "$PID" 2>/dev/null || return 1
+  else
+    read -p "Deseja encerrar o processo '$CMD' com PID $PID? (s/n): " RESPOSTA
+    if [ "$RESPOSTA" == "s" ]; then
+      kill -9 "$PID" 2>/dev/null || return 1
+    else
+      return 2
+    fi
+  fi
+  return 0
+}
+
+# Processar cada comando
+for CMD in "${COMANDOS[@]}"; do
+  # Ignorar variáveis vazias
+  if [ -z "$CMD" ]; then
+    continue
+  fi
+
+  # Buscar o PID do processo
+  PIDS=$(ps aux | grep "$CMD" | grep -v grep | awk '{print $2}')
+
+  if [ -n "$PIDS" ]; then
+    echo "Processos encontrados para o comando: $CMD"
+    for PID in $PIDS; do
+      encerrar_processo "$PID" "$CMD"
+      case $? in
+        0)
+          echo "Processo $PID encerrado com sucesso."
+          ;;
+        1)
+          echo "Falha ao encerrar o processo $PID."
+          NAO_ENCERRADOS+=("$PID ($CMD)")
+          ;;
+        2)
+          echo "Processo $PID não foi encerrado pelo usuário."
+          NAO_ENCERRADOS+=("$PID ($CMD)")
+          ;;
+      esac
+    done
+  else
+    echo "Nenhum processo encontrado para o comando: $CMD"
+  fi
+done
+
+# Listar processos que não puderam ser encerrados
+if [ ${#NAO_ENCERRADOS[@]} -gt 0 ]; then
+  echo "Os seguintes processos não foram encerrados:"
+  for PROC in "${NAO_ENCERRADOS[@]}"; do
+    echo "  - $PROC"
+  done
+fi
+
+# Finalizar
+echo "Script finalizado."

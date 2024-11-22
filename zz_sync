@@ -23,8 +23,24 @@
 # zz_sync listar: Permite visualizar o conteudo completo do arquivo de configuracao ao executar o comando zz_sync listar.
 # zz_sync decide: Permite a escolha da origem e destino interativamente.
 
+# Definição de cores
+BLUE="\e[34m"
+GREEN="\e[32m"
+YELLOW="\e[33m"
+RED="\e[31m"
+RESET="\e[0m"
+
+# Mensagens coloridas
+#echo -e "${BLUE}Esta é uma mensagem em azul${RESET}"
+#echo -e "${GREEN}Esta é uma mensagem em verde${RESET}"
+#echo -e "${YELLOW}Esta é uma mensagem em amarelo${RESET}"
+#echo -e "${RED}Esta é uma mensagem em vermelho${RESET}"
+
+
+
+
 # Define local do arquivo de configuracao
-config_file="/etc/scripts/zz_sync.conf"
+config_file="/etc/scripts/zz_syncA.conf"
 
 # Funcao para listar o conteudo completo do arquivo de configuracao
 listar_configuracoes_completo() {
@@ -148,7 +164,7 @@ localidade2="//${destino_IP}${destino_share}"
 ponto_montagem_origem="/mnt/origem"
 ponto_montagem_destino="/mnt/destino"
 
-# Verifica se os pontos de montagem existem, se nao, cria-os
+# Verifica se os pontos de montagem existem, se não, cria-os
 if [ ! -d "$ponto_montagem_origem" ]; then
     echo "Criando ponto de montagem: $ponto_montagem_origem"
     mkdir -p "$ponto_montagem_origem"
@@ -158,6 +174,47 @@ if [ ! -d "$ponto_montagem_destino" ]; then
     echo "Criando ponto de montagem: $ponto_montagem_destino"
     mkdir -p "$ponto_montagem_destino"
 fi
+
+# Função para verificar, desmontar e tratar falhas
+desmontar_ponto_montagem() {
+    local ponto=$1
+
+    if mount | grep -q "$ponto"; then
+        echo "Tentando desmontar o ponto de montagem: $ponto"
+
+        # Tentativa de desmontar normalmente
+        umount "$ponto" 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "Ponto de montagem desmontado com sucesso: $ponto"
+            return 0
+        fi
+
+        # Tentativa de desmontar de forma forçada
+	echo -e "${YELLOW}Nao foi possivel desmontar de forma normal: $ponto ${RESET}"
+        echo "Tentando desmontar de forma forcada: $ponto"
+        umount -f "$ponto" 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "Ponto de montagem desmontado forcadamente com sucesso: $ponto"
+            return 0
+        fi
+
+        # Se chegou aqui, não foi possível desmontar
+        echo "Erro critico: O ponto de montagem $ponto esta em uso e nao pode ser desmontado."
+	echo -e "${RED}Verifique antes de executar novamente.${RESET}"
+        exit 1
+    fi
+
+    echo "Ponto de montagem nao esta montado: $ponto"
+    return 0
+}
+
+# Verificar e desmontar os pontos de montagem
+desmontar_ponto_montagem "$ponto_montagem_origem"
+desmontar_ponto_montagem "$ponto_montagem_destino"
+
+echo "Todos os pontos de montagem foram verificados, desmontados (se necessario), e criados (se inexistentes)."
+
+
 
 # Funcao para verificar se a localidade esta disponivel e monta-la se necessario
 verificar_e_montar_localidade() {
