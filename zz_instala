@@ -3,10 +3,25 @@
 
 #bash <(curl -s https://raw.githubusercontent.com/atedim/zz/main/zz_instala)
 
+###Testa ROOT###
+if [[ $EUID -ne 0 ]]; then
+   echo "Rode o Script como ROOT" 
+   exit
+fi
+###Testa ROOT###
+
+# Prepara instalações #
+apt update && apt upgrade -y && apt autoremove && apt autoclean && apt clean
+# Prepara instalações #
+
+###instala basicos###
+apt install ntpdate rcconf mc rsync cifs-utils samba mergerfs htop bmon curl iptraf net-tools gdu etherwake screen mdadm rclone -y
+###instala basicos###
 
 
 # Ajusta data e hora do sistema
 ntpdate pool.ntp.org >> /dev/null
+
 
 # Configurações dos caminhos
 caminho_repositorio="https://raw.githubusercontent.com/atedim/zz/main"
@@ -73,4 +88,10 @@ chown root:root -R $caminho_scripts
 chown root:root -R $caminho_bkp
 
 
+###Insere Script to PATH###
+sed -i -e '$a\' ~/.bashrc && echo 'export PATH=$PATH:/etc/scripts' >>~/.bashrc && sed -i -e '$a\' ~/.bashrc
+###Insere Script to PATH###
+
+
 echo "Processo concluído."
+echo "Recomendado reinicio completo."
