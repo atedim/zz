@@ -19,4 +19,4 @@ find "$TARGET_DIR" \! -perm 777 -exec chmod 777 {} +
 echo "Alterando proprietario e grupo para root:root onde necessario..."
 find "$TARGET_DIR" \! -user root -o \! -group root -exec chown root:root {} +
 
-echo "Processo concluido."
+echo "Processo concluído."
