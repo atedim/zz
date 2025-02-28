@@ -1,24 +1,9 @@
 #!/bin/bash
 
-#####
-# Sistema de detectção de IP WAN
-# Detecta ip atual e loga, caso aja mudança em relação ao ultimo ip loga a mudança e exetuta atualização de DDNS
-# Feito por Antonio M. Tedim em 17/02/2025
-# ver 0.01
-
-#login
-#send@grupoalbatroz.com.br
-#
-#senha
-#4lb4tr0z53ndM41l
-#
-#echo -e "Subject: Test Email\n\nThis is a test email." | ssmtp send@grupoalbatroz.com.br
-
-
 # Configurações
-EMAIL_TO="ti@grupoalbatroz.com.br"
+EMAIL_TO="system@grupoalbatroz.com.br"
 EMAIL_FROM="send@grupoalbatroz.com.br"
-EMAIL_SUBJECT="Alteração de IP WAN Detectada - AlbaMatriz"
+EMAIL_SUBJECT="Alteração de IP WAN Detectada - Alba Matriz"
 LOG_FILE="/etc/scripts/log/ip_changes.log"
 IP_FILE="/etc/scripts/log/wan_ip.txt"
 
@@ -26,6 +11,9 @@ IP_FILE="/etc/scripts/log/wan_ip.txt"
 DUCKDNS_DOMAIN="albamatriz"
 DUCKDNS_TOKEN="bf52ad64-74d1-44fd-9718-a398a4ffeafa&ip"
 DUCKDNS_URL="https://www.duckdns.org/update"
+
+# Mensagens a serem filtradas (sem envio de email)
+msg_filter="upstream request timeout"
 
 # Cria diretórios e arquivos se não existirem
 mkdir -p "$(dirname "$IP_FILE")" "$(dirname "$LOG_FILE")"
@@ -46,7 +34,7 @@ send_email() {
     local new_ip="$2"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     local message="Mudança de IP WAN detectada em $timestamp\n\nIP Antigo: $old_ip\nNovo IP: $new_ip"
-    
+
     echo -e "To: ${EMAIL_TO}\nFrom: ${EMAIL_FROM}\nSubject: ${EMAIL_SUBJECT}\n\n${message}" | ssmtp ${EMAIL_TO}
 }
 
@@ -61,9 +49,9 @@ log_change() {
 update_duckdns() {
     local ip="$1"
     local response
-    
+
     response=$(curl -s -k "${DUCKDNS_URL}?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=${ip}")
-    
+
     if [ "$response" = "OK" ]; then
         log_change "DuckDNS atualizado com sucesso para IP: $ip"
     else
@@ -86,6 +74,12 @@ if [ -z "$NEW_IP" ]; then
     exit 1
 fi
 
+# Verifica se o IP corresponde às mensagens filtradas
+if [ "$NEW_IP" = "$msg_filter" ]; then
+    log_change "Ignorando alteração de IP: detectado '$msg_filter'"
+    exit 0
+fi
+
 # Lê o IP anterior do arquivo
 LAST_IP=""
 if [ -f "$IP_FILE" ]; then
@@ -104,13 +98,13 @@ fi
 if [ "$NEW_IP" != "$LAST_IP" ]; then
     # Registra o novo IP
     echo "$NEW_IP" > "$IP_FILE"
-    
+
     # Registra a mudança no log
     log_change "IP alterado de $LAST_IP para $NEW_IP"
-    
+
     # Envia email de notificação
     send_email "$LAST_IP" "$NEW_IP"
-    
+
     # Atualiza DDNS
     update_duckdns "$NEW_IP"
 fi
