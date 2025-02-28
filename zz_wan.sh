@@ -1,5 +1,20 @@
 #!/bin/bash
 
+#####
+# Sistema de detectção de IP WAN
+# Detecta ip atual e loga, caso aja mudança em relação ao ultimo ip loga a mudança e exetuta atualização de DDNS
+# Feito por Antonio M. Tedim em 17/02/2025
+# ver 0.01
+
+#login
+#send@grupoalbatroz.com.br
+#
+#senha
+#4lb4tr0z53ndM41l
+#
+#echo -e "Subject: Test Email\n\nThis is a test email." | ssmtp send@grupoalbatroz.com.br
+
+
 # Configurações
 EMAIL_TO="system@grupoalbatroz.com.br"
 EMAIL_FROM="send@grupoalbatroz.com.br"
