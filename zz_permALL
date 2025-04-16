@@ -1,0 +1,21 @@
+#!/bin/bash
+# Ajusta permissões e dono dos arquivos
+# Antonio M. Tedim - 16/04/2025
+
+# Variáveis configuráveis
+DIRETORIO_ALVO="/dados"
+USUARIO_DONO="nobody"
+GRUPO_DONO="nogroup"
+PERMISSAO="777"
+
+# Verifica se o diretório existe
+if [ ! -d "$DIRETORIO_ALVO" ]; then
+    echo "Erro: Diretório '$DIRETORIO_ALVO' não encontrado!"
+    exit 1
+fi
+
+# Aplica dono e permissões recursivamente
+echo "Aplicando dono: $USUARIO_DONO:$GRUPO_DONO e permissão: $PERMISSAO em $DIRETORIO_ALVO"
+chown -R "$USUARIO_DONO:$GRUPO_DONO" "$DIRETORIO_ALVO"
+chmod -R "$PERMISSAO" "$DIRETORIO_ALVO"
+echo "Alterações concluídas com sucesso."
