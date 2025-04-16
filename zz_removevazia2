@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Caminho base (pode ser ajustado ou passado como parâmetro futuramente)
-CAMINHO_BASE="/dados/"
+CAMINHO_BASE="/dado/"
 
 if [[ "$1" == "--delete" ]]; then
     echo "Removendo pastas vazias (recursivamente)..."
