@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# Caminho base (pode ser ajustado ou passado como parâmetro futuramente)
+CAMINHO_BASE="/dados/"
+
+if [[ "$1" == "--delete" ]]; then
+    echo "Removendo pastas vazias (recursivamente)..."
+    while true; do
+        pastas_vazias=$(find "$CAMINHO_BASE" -type d -empty)
+        if [[ -z "$pastas_vazias" ]]; then
+            break
+        fi
+        echo "$pastas_vazias" | while read -r pasta; do
+            echo "Removendo: $pasta"
+            rmdir "$pasta" 2>/dev/null
+        done
+    done
+    echo "Remoção concluída."
+else
+    echo "Pastas vazias encontradas:"
+    find "$CAMINHO_BASE" -type d -empty
+    echo -e "\nUse o parâmetro '--delete' para removê-las recursivamente."
+fi
