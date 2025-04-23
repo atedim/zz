@@ -1,0 +1,96 @@
+#!/bin/bash
+## Limpa Temps v0.01 - Apaga arquivos temporários antigos, pastas inuteis e afins  ou apenas registra no log
+
+# Caminho base da lixeira
+CAMINHO_BASE="/dados"
+
+# Caminho para salvar o log dos arquivos removidos
+LOG_DIR="/etc/scripts"
+LOG_FILE="$LOG_DIR/removidos_$(date +%d%m%Y).log"
+
+# Dias mínimos para considerar o arquivo antigo
+MTEMP=3
+
+# Modo somente log (sem remoção)?
+LOGONLY=0
+if [[ "$1" == "--logonly" ]]; then
+    LOGONLY=1
+    echo "Executando em modo SOMENTE LOG (sem remoção física)." | tee -a "$LOG_FILE"
+fi
+
+# Verifica se o diretório base existe
+if [ ! -d "$CAMINHO_BASE" ]; then
+    echo "Erro: pasta $CAMINHO_BASE não existe." | tee -a "$LOG_FILE"
+    exit 1
+fi
+
+# Garante que o diretório de log exista
+mkdir -p "$LOG_DIR"
+
+# Ajusta data e hora se possível
+command -v ntpdate >/dev/null && ntpdate pool.ntp.org
+
+# Lista de tipos e critérios
+declare -A tipos
+tipos["*.tmp"]="-iname"
+tipos["~*"]="-name"
+tipos["*.lnk"]="-iname"
+
+# Função para gerar estatísticas
+gerar_estatisticas() {
+    local titulo="$1"
+    echo "" >> "$LOG_FILE"
+    echo "===== $titulo =====" >> "$LOG_FILE"
+
+    for padrao in "${!tipos[@]}"; do
+        criterio="${tipos[$padrao]}"
+        qtd=$(find "$CAMINHO_BASE" -type f "$criterio" "$padrao" -mtime +"$MTEMP" | wc -l)
+        tamanho=$(find "$CAMINHO_BASE" -type f "$criterio" "$padrao" -mtime +"$MTEMP" -printf "%s\n" | awk '{s+=$1} END {printf "%.2f MB", s/1024/1024}')
+        echo "Tipo '$padrao' : $qtd arquivos - $tamanho" >> "$LOG_FILE"
+    done
+
+    # Estatísticas: Arquivos iniciando com "Novo(a)" e tamanho 0
+    qtd_novo=$(find "$CAMINHO_BASE" -type f -name "Novo(a)*" -size 0 | wc -l)
+    echo "Arquivos 'Novo(a)*' com tamanho 0: $qtd_novo arquivos" >> "$LOG_FILE"
+
+    # Estatísticas: Pastas vazias com nome iniciando em "Nova pasta"
+    qtd_pastas=$(find "$CAMINHO_BASE" -type d -name "Nova pasta*" -empty | wc -l)
+    echo "Pastas vazias 'Nova pasta*': $qtd_pastas pastas" >> "$LOG_FILE"
+}
+
+# Estatísticas antes da remoção
+gerar_estatisticas "ESTATÍSTICAS ANTES DA REMOÇÃO"
+
+# Remoção ou somente log dos arquivos padrão
+for padrao in "${!tipos[@]}"; do
+    criterio="${tipos[$padrao]}"
+    echo ">> Verificando arquivos '$padrao' com mais de $MTEMP dias em $CAMINHO_BASE..." | tee -a "$LOG_FILE"
+
+    if [ "$LOGONLY" -eq 1 ]; then
+        find "$CAMINHO_BASE" -type f "$criterio" "$padrao" -mtime +"$MTEMP" -print >> "$LOG_FILE"
+    else
+        find "$CAMINHO_BASE" -type f "$criterio" "$padrao" -mtime +"$MTEMP" -print -delete >> "$LOG_FILE"
+    fi
+done
+
+# Arquivos literalmente iniciando com "Novo(a)" e tamanho 0
+echo ">> Verificando arquivos iniciando com 'Novo(a)' e tamanho 0..." | tee -a "$LOG_FILE"
+if [ "$LOGONLY" -eq 1 ]; then
+    find "$CAMINHO_BASE" -type f -name "Novo(a)*" -size 0 -print >> "$LOG_FILE"
+else
+    find "$CAMINHO_BASE" -type f -name "Novo(a)*" -size 0 -print -delete >> "$LOG_FILE"
+fi
+
+# Pastas vazias que começam com "Nova pasta"
+echo ">> Verificando pastas vazias iniciando com 'Nova pasta'..." | tee -a "$LOG_FILE"
+if [ "$LOGONLY" -eq 1 ]; then
+    find "$CAMINHO_BASE" -type d -name "Nova pasta*" -empty -print >> "$LOG_FILE"
+else
+    find "$CAMINHO_BASE" -type d -name "Nova pasta*" -empty -print -delete >> "$LOG_FILE"
+fi
+
+# Estatísticas após a execução
+gerar_estatisticas "ESTATÍSTICAS APÓS EXECUÇÃO"
+
+echo "" >> "$LOG_FILE"
+echo "Remoção finalizada em $(date '+%d/%m/%Y %H:%M:%S')" | tee -a "$LOG_FILE"

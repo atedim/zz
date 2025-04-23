@@ -1,0 +1,49 @@
+#!/bin/bash
+
+# -------- CONFIGURAÇÕES --------
+PASTA_ORIGEM="$1"  # Pasta a ser compactada (argumento 1)
+[ -z "$PASTA_ORIGEM" ] && echo "[ERRO] Informe a pasta. Exemplo: ./compactar.sh /caminho/da/pasta" && exit 1
+[ ! -d "$PASTA_ORIGEM" ] && echo "[ERRO] Pasta '$PASTA_ORIGEM' não existe!" && exit 1
+
+NOME_PASTA=$(basename "$PASTA_ORIGEM")
+DATA=$(date +'%Y%m%d')
+#PASTA_SAIDA="./arquivos_compactados"
+PASTA_SAIDA="/dr"
+ARQUIVO_SAIDA="${NOME_PASTA}_backup_${DATA}.tar.gz"
+LOG="log_${NOME_PASTA}_${DATA}.log"
+
+# Variável para o nível de compressão do gzip (1 a 9)
+NIVEL_COMPRESSAO=5
+
+mkdir -p "$PASTA_SAIDA" || { echo "[ERRO] Não foi possível criar '$PASTA_SAIDA'"; exit 1; }
+
+# -------- LOG: INÍCIO --------
+echo "========================================" | tee "$LOG"
+echo "[INFO] Início: $(date)" | tee -a "$LOG"
+echo "[INFO] Pasta origem: $PASTA_ORIGEM" | tee -a "$LOG"
+echo "[INFO] Arquivo de saída: $PASTA_SAIDA/$ARQUIVO_SAIDA" | tee -a "$LOG"
+
+# -------- TAMANHO ORIGINAL --------
+TAMANHO_ORIGINAL=$(du -sb "$PASTA_ORIGEM" | cut -f1)
+echo "[INFO] Tamanho original: $((TAMANHO_ORIGINAL / 1024 / 1024)) MiB" | tee -a "$LOG"
+
+# -------- COMPACTAÇÃO --------
+echo "[INFO] Compactando com gzip..." | tee -a "$LOG"
+tar -cf - -C "$PASTA_ORIGEM" . | gzip -${NIVEL_COMPRESSAO} > "$PASTA_SAIDA/$ARQUIVO_SAIDA" 2>>"$LOG"
+RETORNO=$?
+
+# -------- VERIFICAÇÃO --------
+if [ $RETORNO -eq 0 ]; then
+    TAMANHO_COMP=$(stat -c %s "$PASTA_SAIDA/$ARQUIVO_SAIDA")
+    TX_COMPRESSAO=$(awk "BEGIN {printf \"%.2f\", $TAMANHO_COMP / $TAMANHO_ORIGINAL * 100}")
+    echo "[OK] Compactação concluída com sucesso." | tee -a "$LOG"
+    echo "[INFO] Tamanho final: $((TAMANHO_COMP / 1024 / 1024)) MiB" | tee -a "$LOG"
+    echo "[INFO] Taxa de compressão: $TX_COMPRESSAO %" | tee -a "$LOG"
+else
+    echo "[ERRO] Falha na compactação!" | tee -a "$LOG"
+    exit 1
+fi
+
+# -------- FIM --------
+echo "[INFO] Fim: $(date)" | tee -a "$LOG"
+echo "========================================" | tee -a "$LOG"
