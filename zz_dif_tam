@@ -1,0 +1,64 @@
+#!/bin/bash
+
+# Caminhos das pastas (edite aqui ou use como parâmetros)
+PASTA1="/dados"
+PASTA2="/dr"
+
+# Verifica se as pastas existem
+[ ! -d "$PASTA1" ] && echo "Erro: PASTA1 não existe: $PASTA1" && exit 1
+[ ! -d "$PASTA2" ] && echo "Erro: PASTA2 não existe: $PASTA2" && exit 1
+
+# Obtém tamanho total em bytes
+TAMANHO1=$(du -sb "$PASTA1" | awk '{print $1}')
+TAMANHO2=$(du -sb "$PASTA2" | awk '{print $1}')
+
+# Obtém número de arquivos
+ARQS1=$(find "$PASTA1" -type f | wc -l)
+ARQS2=$(find "$PASTA2" -type f | wc -l)
+
+# Função para calcular porcentagem
+calc_diff_percent() {
+  menor=$1
+  maior=$2
+  if [ "$maior" -eq 0 ]; then
+    echo 0
+  else
+    diff=$((maior - menor))
+    percent=$((100 * diff / maior))
+    echo "$percent"
+  fi
+}
+
+# Calcula diferenças em porcentagem
+PERC_TAM=$(calc_diff_percent "$TAMANHO1" "$TAMANHO2")
+PERC_ARQ=$(calc_diff_percent "$ARQS1" "$ARQS2")
+
+# Função para classificar diferença
+classificar() {
+  local tipo=$1
+  local perc=$2
+
+  if [ "$perc" -lt 10 ]; then
+    echo "$tipo: Diferença < 10% (Nível 1)"
+  elif [ "$perc" -lt 30 ]; then
+    echo "$tipo: Diferença < 30% (Nível 2)"
+  elif [ "$perc" -lt 50 ]; then
+    echo "$tipo: Diferença < 50% (Nível 3)"
+  else
+    echo "$tipo: Diferença ≥ 50% (Fora do limite)"
+  fi
+}
+
+# Exibe resultados
+echo "Comparando: $PASTA1 (menor?) com $PASTA2 (referência)"
+echo
+echo "Tamanho:"
+echo "  PASTA1: $TAMANHO1 bytes"
+echo "  PASTA2: $TAMANHO2 bytes"
+classificar "Tamanho" "$PERC_TAM"
+
+echo
+echo "Quantidade de Arquivos:"
+echo "  PASTA1: $ARQS1 arquivos"
+echo "  PASTA2: $ARQS2 arquivos"
+classificar "Arquivos" "$PERC_ARQ"

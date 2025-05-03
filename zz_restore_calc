@@ -1,0 +1,43 @@
+#!/bin/bash
+
+export LC_NUMERIC=C
+
+echo "=== Estimador de Finalização de Leitura de Dados ==="
+
+read -p "Informe a porcentagem concluída (ex: 94): " PORCENTAGEM_ATUAL
+read -p "Informe os bytes lidos até agora: " BYTES_LIDOS
+read -p "Informe o tempo decorrido em segundos: " TEMPO_DECORRIDO
+
+# Cálculo do total estimado
+TOTAL_BYTES=$(echo "$BYTES_LIDOS / ($PORCENTAGEM_ATUAL / 100)" | bc -l)
+TOTAL_BYTES=${TOTAL_BYTES%.*}
+
+# Cálculo dos bytes restantes
+BYTES_RESTANTES=$((TOTAL_BYTES - BYTES_LIDOS))
+
+# Cálculo da velocidade média (bytes por segundo)
+VELOCIDADE_MEDIA=$(echo "$BYTES_LIDOS / $TEMPO_DECORRIDO" | bc -l)
+
+# Cálculo do tempo restante
+TEMPO_RESTANTE=$(echo "$BYTES_RESTANTES / $VELOCIDADE_MEDIA" | bc -l)
+TEMPO_RESTANTE=${TEMPO_RESTANTE%.*}
+
+# Conversão do tempo restante para horas, minutos e segundos
+HORAS=$((TEMPO_RESTANTE / 3600))
+MINUTOS=$(((TEMPO_RESTANTE % 3600) / 60))
+SEGUNDOS=$((TEMPO_RESTANTE % 60))
+
+# Obter hora atual do sistema
+DATA_ATUAL=$(date "+%d/%m/%Y %H:%M:%S")
+
+# Calcular hora prevista de término
+DATA_FINAL=$(date -d "+$TEMPO_RESTANTE seconds" "+%d/%m/%Y %H:%M:%S")
+
+# Mostrar resultados
+echo
+echo "=== Resultados ==="
+echo "Data/Hora atual:        $DATA_ATUAL"
+echo "Total estimado de dados: $TOTAL_BYTES bytes"
+echo "Velocidade média:       $(printf "%.2f" "$VELOCIDADE_MEDIA") bytes/segundo"
+echo "Tempo restante estimado: $HORAS horas, $MINUTOS minutos e $SEGUNDOS segundos"
+echo "Previsão de finalização: $DATA_FINAL"
