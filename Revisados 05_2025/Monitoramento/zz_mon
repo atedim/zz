@@ -1,13 +1,33 @@
 #!/bin/bash
 
 # Configurações
-ARQUIVO_HOSTS="lista_hosts.txt"
-NUM_TENTATIVAS=5
+ARQUIVO_HOSTS="/etc/scripts/zz_mon_hosts.txt"
+NUM_TENTATIVAS=15
 INTERVALO=2
-ARQUIVO_SAIDA="resultado_monitoramento.txt"
-PERCENTUAL_FALHA_CRITICO=50
-ARQUIVO_LOG_MUDANCA="mudancas_disponibilidade.log"
+ARQUIVO_SAIDA="/etc/scripts/zz_mon_result.txt"
+PERCENTUAL_FALHA_CRITICO=70
+ARQUIVO_LOG_MUDANCA="zz_mon_disp.log"
 DIRETORIO_ESTADOS="./estados"
+MODO_SILENCIOSO=0
+
+# Verifica argumentos
+for arg in "$@"; do
+    case "$arg" in
+        -s|--silent)
+            MODO_SILENCIOSO=1
+            ;;
+        -h|--help)
+            echo "Uso: $0 [-s|--silent]"
+            echo "  -s, --silent   Executa em modo silencioso (sem saída no terminal)"
+            exit 0
+            ;;
+        *)
+            echo "Parâmetro inválido: $arg"
+            echo "Use -h para ajuda."
+            exit 1
+            ;;
+    esac
+done
 
 # Limpa saída anterior
 rm -f saida_*.txt "$ARQUIVO_SAIDA"
@@ -31,6 +51,7 @@ monitorar_host() {
     local HORARIO_INICIO=""
     local HORARIO_FIM=""
     local NOVO_ESTADO="OK"
+    local RESULT=()
 
     {
         echo "===== Monitorando $HOSTNAME ($IP) ====="
@@ -50,9 +71,14 @@ monitorar_host() {
         done
 
         local PERCENTUAL_FALHA=$((100 * FALHAS / NUM_TENTATIVAS))
+
         if [ "$FALHAS" -eq 0 ]; then
             echo "Todas as tentativas iniciadas em $HORARIO_INICIO e finalizadas em $HORARIO_FIM: OK"
             NOVO_ESTADO="OK"
+        elif [ "$FALHAS" -eq "$NUM_TENTATIVAS" ]; then
+            echo "Todas as tentativas iniciadas em $HORARIO_INICIO e finalizadas em $HORARIO_FIM: FALHA"
+            echo "Resumo: $HOSTNAME teve 100% de falhas ($FALHAS de $NUM_TENTATIVAS)"
+            NOVO_ESTADO="FALHA"
         else
             for (( i=1; i<=NUM_TENTATIVAS; i++ )); do
                 HORA=$(date +"%H:%M:%S")
@@ -96,7 +122,11 @@ wait
 
 # Exibe e grava a saída organizada
 for TMP in saida_*.txt; do
-    cat "$TMP" | tee -a "$ARQUIVO_SAIDA"
+    if [ "$MODO_SILENCIOSO" -eq 0 ]; then
+        cat "$TMP" | tee -a "$ARQUIVO_SAIDA"
+    else
+        cat "$TMP" >> "$ARQUIVO_SAIDA"
+    fi
 done
 
 # Remove arquivos temporários
