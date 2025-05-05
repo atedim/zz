@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #####
-# Sistema de detectção de IP WAN
-# Detecta ip atual e loga, caso aja mudança em relação ao ultimo ip loga a mudança e exetuta atualização de DDNS
+# Sistema de detecção de IP WAN
+# Detecta ip atual e loga, caso haja mudança em relação ao ultimo ip loga a mudança e exetuta atualização de DDNS
 # Feito por Antonio M. Tedim em 17/02/2025
 # ver 0.01
 
