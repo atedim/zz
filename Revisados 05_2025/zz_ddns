@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Verificar se está sendo executado como root
+if [ "$EUID" -ne 0 ]; then
+  echo "Este script precisa ser executado como root."
+  exit 1
+fi
+
+# Variáveis de configuração
+domains="albamatriz"
+token="bf52ad64-74d1-44fd-9718-a398a4ffeafa"
+
+# Diretório de log
+log_dir="/etc/scripts/duckdns"
+log_file="$log_dir/duck.log"
+
+# Criar diretório de log se não existir
+mkdir -p "$log_dir"
+
+# Construir URL
+url="https://www.duckdns.org/update?domains=${domains}&token=${token}&ip="
+
+# Log com data e hora
+{
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Executando atualização DuckDNS..."
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] URL: $url"
+  curl -k -s "$url"
+  echo ""
+} >> "$log_file"
