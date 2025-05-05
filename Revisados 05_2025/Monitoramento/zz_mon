@@ -1,0 +1,103 @@
+#!/bin/bash
+
+# Configurações
+ARQUIVO_HOSTS="lista_hosts.txt"
+NUM_TENTATIVAS=5
+INTERVALO=2
+ARQUIVO_SAIDA="resultado_monitoramento.txt"
+PERCENTUAL_FALHA_CRITICO=50
+ARQUIVO_LOG_MUDANCA="mudancas_disponibilidade.log"
+DIRETORIO_ESTADOS="./estados"
+
+# Limpa saída anterior
+rm -f saida_*.txt "$ARQUIVO_SAIDA"
+
+# Garante que diretório de estados exista
+mkdir -p "$DIRETORIO_ESTADOS"
+
+# Verifica se o arquivo de hosts existe
+if [ ! -f "$ARQUIVO_HOSTS" ]; then
+    echo "Arquivo $ARQUIVO_HOSTS não encontrado!"
+    exit 1
+fi
+
+# Função para monitorar um host
+monitorar_host() {
+    local HOSTNAME="$1"
+    local IP="$2"
+    local SAIDA_TMP="saida_${HOSTNAME}.txt"
+    local ESTADO_ARQUIVO="$DIRETORIO_ESTADOS/estado_${HOSTNAME}.status"
+    local FALHAS=0
+    local HORARIO_INICIO=""
+    local HORARIO_FIM=""
+    local NOVO_ESTADO="OK"
+
+    {
+        echo "===== Monitorando $HOSTNAME ($IP) ====="
+
+        for (( i=1; i<=NUM_TENTATIVAS; i++ )); do
+            HORA=$(date +"%H:%M:%S")
+            [[ "$i" -eq 1 ]] && HORARIO_INICIO="$HORA"
+            [[ "$i" -eq $NUM_TENTATIVAS ]] && HORARIO_FIM="$HORA"
+
+            if ping -c 1 -W 1 "$IP" > /dev/null 2>&1; then
+                RESULT[$i]="OK"
+            else
+                RESULT[$i]="FALHA"
+                ((FALHAS++))
+            fi
+            sleep "$INTERVALO"
+        done
+
+        local PERCENTUAL_FALHA=$((100 * FALHAS / NUM_TENTATIVAS))
+        if [ "$FALHAS" -eq 0 ]; then
+            echo "Todas as tentativas iniciadas em $HORARIO_INICIO e finalizadas em $HORARIO_FIM: OK"
+            NOVO_ESTADO="OK"
+        else
+            for (( i=1; i<=NUM_TENTATIVAS; i++ )); do
+                HORA=$(date +"%H:%M:%S")
+                echo "Tentativa $i [$HORA]: ${RESULT[$i]}"
+            done
+
+            NOVO_ESTADO="FALHA"
+
+            if [ "$PERCENTUAL_FALHA" -gt "$PERCENTUAL_FALHA_CRITICO" ]; then
+                echo ">>> ALERTA: $HOSTNAME teve $PERCENTUAL_FALHA% de falhas ($FALHAS de $NUM_TENTATIVAS)"
+            else
+                echo "Resumo: $HOSTNAME teve $PERCENTUAL_FALHA% de falhas ($FALHAS de $NUM_TENTATIVAS)"
+            fi
+        fi
+
+        echo ""
+
+        # Verifica mudança de estado
+        if [ -f "$ESTADO_ARQUIVO" ]; then
+            ESTADO_ANTERIOR=$(cat "$ESTADO_ARQUIVO")
+        else
+            ESTADO_ANTERIOR="DESCONHECIDO"
+        fi
+
+        if [ "$ESTADO_ANTERIOR" != "$NOVO_ESTADO" ]; then
+            TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+            echo "[$TIMESTAMP] $HOSTNAME ($IP): Estado alterado de $ESTADO_ANTERIOR para $NOVO_ESTADO" >> "$ARQUIVO_LOG_MUDANCA"
+        fi
+
+        echo "$NOVO_ESTADO" > "$ESTADO_ARQUIVO"
+    } > "$SAIDA_TMP"
+}
+
+# Executa os testes em paralelo
+while IFS=',' read -r HOSTNAME IP; do
+    monitorar_host "$HOSTNAME" "$IP" &
+done < "$ARQUIVO_HOSTS"
+
+# Aguarda todos terminarem
+wait
+
+# Exibe e grava a saída organizada
+for TMP in saida_*.txt; do
+    cat "$TMP" | tee -a "$ARQUIVO_SAIDA"
+done
+
+# Remove arquivos temporários
+rm -f saida_*.txt

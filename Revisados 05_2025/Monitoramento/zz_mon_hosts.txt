@@ -1,0 +1,7 @@
+Google,8.8.8.8
+Cloudflare,1.1.1.1
+Hostinvalido,192.0.2.123
+Xavier,192.168.1.8
+XavierADM,192.168.0.8
+Charles,192.168.1.9
+CharlesADM,192.168.0.9

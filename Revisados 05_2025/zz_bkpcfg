@@ -10,7 +10,7 @@ data=$(date +"%d%m%Y")
 arquivo="configs_${data}_etc.tgz"
 
 # Diretório de destino
-diretorio_destino="/dados/configs"
+diretorio_destino="/etc/scripts/configs"
 
 # Diretórios a serem incluídos no arquivo
 diretorios="/etc/scripts /etc/ssh /etc/samba"

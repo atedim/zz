@@ -8,6 +8,11 @@ USUARIO_DONO="nobody"
 GRUPO_DONO="nogroup"
 PERMISSAO="777"
 
+# Verifica se um argumento foi passado; se sim, usa-o como diretório de destino
+if [ -n "$1" ]; then
+    DIRETORIO_ALVO="$1"
+fi
+
 # Verifica se o diretório existe
 if [ ! -d "$DIRETORIO_ALVO" ]; then
     echo "Erro: Diretório '$DIRETORIO_ALVO' não encontrado!"
@@ -16,6 +21,9 @@ fi
 
 # Aplica dono e permissões recursivamente
 echo "Aplicando dono: $USUARIO_DONO:$GRUPO_DONO e permissão: $PERMISSAO em $DIRETORIO_ALVO"
-chown -R "$USUARIO_DONO:$GRUPO_DONO" "$DIRETORIO_ALVO"
-chmod -R "$PERMISSAO" "$DIRETORIO_ALVO"
-echo "Alterações concluídas com sucesso."
+
+# Corrige dono apenas onde for diferente do desejado
+find "$DIRETORIO_ALVO" \( \! -user "$USUARIO_DONO" -o \! -group "$GRUPO_DONO" \) -exec chown "$USUARIO_DONO:$GRUPO_DONO" {} +
+
+# Corrige permissões apenas onde forem diferentes
+find "$DIRETORIO_ALVO" \! -perm "$PERMISSAO" -exec chmod "$PERMISSAO" {} +

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Define o arquivo de configuração e a customização desejada do prompt
+# Define o arquivo de configuracao e a customizacao desejada do prompt
 BASHRC="$HOME/.bashrc"
 NEW_PROMPT="PS1='\\[\\033[1;34m\\]\\u\\[\\033[0m\\]@\\[\\033[1;33m\\]\\h\\[\\033[0m\\]_\\[\\033[1;32m\\]\$(hostname -I | cut -d\" \" -f1)\\[\\033[0m\\]:\\w\\$ '"
 
@@ -9,23 +9,23 @@ CURRENT_PROMPT=$(grep -E '^PS1=' "$BASHRC")
 
 if [ -n "$CURRENT_PROMPT" ]; then
     # Exibe o prompt atual
-    echo "Uma customização de prompt já existe no ~/.bashrc:"
+    echo "Uma customizacao de prompt ja existe no ~/.bashrc:"
     echo "$CURRENT_PROMPT"
-    
+
     # Pergunta ao usuário se deseja substituir pelo novo prompt
     read -p "Deseja substituir pela nova customização de prompt? (s/n): " choice
     if [[ "$choice" =~ ^[Ss]$ ]]; then
         # Substitui o prompt existente pelo novo
         sed -i "s|^PS1=.*|$NEW_PROMPT|" "$BASHRC"
-        echo "Prompt substituído com sucesso."
+        echo "Prompt substituido com sucesso."
     else
-        echo "A customização não foi alterada."
+        echo "A customizacao nao foi alterada."
     fi
 else
-    # Adiciona a nova customização de prompt no final do ~/.bashrc
+    # Adiciona a nova customizacao de prompt no final do ~/.bashrc
     echo "$NEW_PROMPT" >> "$BASHRC"
-    echo "Nova customização de prompt adicionada com sucesso."
+    echo "Nova customizacao de prompt adicionada com sucesso."
 fi
 
-# Aplica as mudanças imediatamente
+# Aplica as mudancas imediatamente
 source "$BASHRC"

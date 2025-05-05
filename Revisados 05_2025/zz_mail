@@ -1,0 +1,66 @@
+#!/bin/bash
+
+#necessario  a configuração adequada do ~/.msmtprc
+##defaults
+##auth           on
+##tls            on
+##tls_trust_file /etc/ssl/certs/ca-certificates.crt
+##logfile        ~/.msmtp.log
+##
+##account        gmail
+##host           smtp.gmail.com
+##port           587
+##from           SEU_EMAIL@gmail.com
+##user           SEU_EMAIL@gmail.com
+##password       SUA_SENHA_DE_APLICATIVO
+## account default : gmail
+
+
+# Função de ajuda
+mostrar_ajuda() {
+    echo "Uso: $0 DESTINATARIO ASSUNTO MENSAGEM [ANEXO]"
+    echo ""
+    echo "Parâmetros:"
+    echo "  DESTINATARIO   E-mail de destino (obrigatório)"
+    echo "  ASSUNTO        Assunto do e-mail (obrigatório)"
+    echo "  MENSAGEM       Corpo do e-mail (obrigatório)"
+    echo "  ANEXO          Caminho para arquivo anexo (opcional)"
+    echo ""
+    echo "Exemplos:"
+    echo "  $0 usuario@dominio.com \"Relatório\" \"Segue o relatório em anexo.\""
+    echo "  $0 usuario@dominio.com \"Log de erros\" \"Falhas encontradas.\" /tmp/erros.log"
+    exit 1
+}
+
+# Verifica se pelo menos os 3 parâmetros obrigatórios foram passados
+if [ $# -lt 3 ]; then
+    mostrar_ajuda
+fi
+
+# Variáveis recebidas como parâmetros
+EMAIL_DESTINO="$1"
+ASSUNTO="$2"
+MENSAGEM="$3"
+ANEXO="$4"  # Opcional
+
+# Arquivo temporário para corpo do e-mail
+EMAIL_TMP=$(mktemp)
+
+# Monta o conteúdo do e-mail
+{
+    echo "To: $EMAIL_DESTINO"
+    echo "Subject: $ASSUNTO"
+    echo "Content-Type: text/plain; charset=utf-8"
+    echo ""
+    echo "$MENSAGEM"
+} > "$EMAIL_TMP"
+
+# Envia com ou sem anexo
+if [ -n "$ANEXO" ] && [ -f "$ANEXO" ]; then
+    (cat "$EMAIL_TMP"; uuencode "$ANEXO" "$(basename "$ANEXO")") | msmtp "$EMAIL_DESTINO"
+else
+    cat "$EMAIL_TMP" | msmtp "$EMAIL_DESTINO"
+fi
+
+# Limpeza
+rm -f "$EMAIL_TMP"
