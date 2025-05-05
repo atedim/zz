@@ -1,6 +1,9 @@
 #!/bin/bash
 
 
+#bash <(wget -qO- https://raw.githubusercontent.com/atedim/zz/main/zz_instala)
+
+
 #bash <(curl -s https://raw.githubusercontent.com/atedim/zz/main/zz_instala)
 
 ###Testa ROOT###
@@ -15,7 +18,8 @@ apt update && apt upgrade -y && apt autoremove && apt autoclean && apt clean
 # Prepara instalações #
 
 ###instala basicos###
-apt install ntpdate rcconf mc rsync cifs-utils samba mergerfs htop bmon curl iptraf net-tools gdu etherwake screen mdadm rclone -y
+#apt install ntpdate rcconf mc rsync cifs-utils samba mergerfs htop bmon curl iptraf net-tools gdu etherwake screen mdadm rclone -y
+apt install bmon htop rclone rsync sshpass dos2unix mc msmtp msmtp-mta sharutils ntpdate curl bc rcconf cifs-utils samba mergerfs iptraf net-tools gdu etherwake screen mdadm -y
 ###instala basicos###
 
 
