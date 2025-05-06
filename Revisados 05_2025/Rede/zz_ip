@@ -1,0 +1,244 @@
+#!/bin/bash
+#
+# zz_ip - Script para exibir informações de rede
+#
+# Uso: ./zz_ip [opção]
+#
+# Opções:
+#   (nenhuma)     Mostra HOSTNAME, IP LAN e IP WAN
+#   ws            Mostra apenas o IP WAN (modo silencioso)
+#   ls            Mostra apenas o IP LAN (modo silencioso)
+#   hs            Mostra apenas o HOSTNAME (modo silencioso)
+#   full          Mostra informações completas de todas as interfaces de rede
+#
+#   para integrações use IPLAN=$(./zz_ip ls)
+#   para integrações use IPWAN=$(./zz_ip ws)
+#   para integrações use HOST=$(./zz_ip hs)
+
+
+# Função para checar se um comando existe
+command_exists() {
+    command -v "$1" &> /dev/null
+}
+
+# Função que obtém o IP LAN primário
+get_lan_ip() {
+    # Obtém o IP da interface principal (excluindo loopback)
+    if command_exists "ip"; then
+        # Usando o comando ip (mais moderno)
+        ip -4 addr show scope global | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1
+    elif command_exists "ifconfig"; then
+        # Usando o comando ifconfig (mais antigo)
+        ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1
+    else
+        echo "Não foi possível obter o IP LAN. Comandos 'ip' e 'ifconfig' não encontrados."
+        return 1
+    fi
+}
+
+# Função para obter informações detalhadas de todas as interfaces de rede
+get_full_network_info() {
+    echo "=== INFORMAÇÕES DETALHADAS DE REDE ==="
+    echo "Hostname: $(hostname)"
+    echo "Data/Hora: $(date)"
+    echo ""
+
+    # IP WAN
+    echo "IP WAN: $(get_wan_ip)"
+    echo ""
+
+    echo "=== INTERFACES DE REDE ==="
+
+    # Verifica qual comando está disponível
+    if command_exists "ip"; then
+        # Lista todas as interfaces
+        interfaces=$(ip -o link show | awk -F': ' '{print $2}')
+
+        for iface in $interfaces; do
+            echo "--- Interface: $iface ---"
+
+            # Status da interface (UP/DOWN)
+            status=$(ip link show $iface | grep -o "state [A-Z]*" | cut -d' ' -f2)
+            echo "Status: $status"
+
+            # Endereço MAC
+            mac=$(ip link show $iface | grep -o "link/[^ ]* [^ ]*" | cut -d' ' -f2)
+            [ ! -z "$mac" ] && echo "MAC: $mac"
+
+            # Endereços IP (IPv4 e IPv6)
+            ipv4=$(ip -4 addr show $iface 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}(/\d+)?' | tr '\n' ' ')
+            [ ! -z "$ipv4" ] && echo "IPv4: $ipv4"
+
+            ipv6=$(ip -6 addr show $iface 2>/dev/null | grep -oP '(?<=inet6\s)[0-9a-f:]+(/\d+)?' | tr '\n' ' ')
+            [ ! -z "$ipv6" ] && echo "IPv6: $ipv6"
+
+            # Velocidade e duplex (se disponível)
+            if [ -d "/sys/class/net/$iface" ]; then
+                if [ -f "/sys/class/net/$iface/speed" ] && [ "$(cat /sys/class/net/$iface/operstate 2>/dev/null)" = "up" ]; then
+                    speed=$(cat /sys/class/net/$iface/speed 2>/dev/null)
+                    [ ! -z "$speed" ] && echo "Velocidade: ${speed} Mbps"
+
+                    if [ -f "/sys/class/net/$iface/duplex" ]; then
+                        duplex=$(cat /sys/class/net/$iface/duplex 2>/dev/null)
+                        [ ! -z "$duplex" ] && echo "Duplex: $duplex"
+                    fi
+                elif [ "$status" = "UP" ]; then
+                    echo "Velocidade: Não disponível (interface sem fio ou virtual)"
+                else
+                    echo "Velocidade: N/A (interface desconectada)"
+                fi
+            fi
+
+            # Estatísticas básicas
+            if [ -d "/sys/class/net/$iface/statistics" ]; then
+                rx_bytes=$(cat /sys/class/net/$iface/statistics/rx_bytes 2>/dev/null)
+                tx_bytes=$(cat /sys/class/net/$iface/statistics/tx_bytes 2>/dev/null)
+
+                if [ ! -z "$rx_bytes" ] && [ ! -z "$tx_bytes" ]; then
+                    # Converte para MB
+                    rx_mb=$(awk "BEGIN {printf \"%.2f\", $rx_bytes/1024/1024}")
+                    tx_mb=$(awk "BEGIN {printf \"%.2f\", $tx_bytes/1024/1024}")
+                    echo "Tráfego: RX: ${rx_mb} MB, TX: ${tx_mb} MB"
+                fi
+            fi
+
+            echo ""
+        done
+    elif command_exists "ifconfig"; then
+        # Abordagem alternativa com ifconfig
+        interfaces=$(ifconfig | grep -E '^[a-zA-Z0-9]+:' | awk '{print $1}' | sed 's/://')
+
+        for iface in $interfaces; do
+            echo "--- Interface: $iface ---"
+            ifconfig_output=$(ifconfig $iface)
+
+            # Status (UP/DOWN)
+            if echo "$ifconfig_output" | grep -q "UP"; then
+                echo "Status: UP"
+            else
+                echo "Status: DOWN"
+            fi
+
+            # Endereço MAC
+            mac=$(echo "$ifconfig_output" | grep -o -E '([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}' | head -n1)
+            [ ! -z "$mac" ] && echo "MAC: $mac"
+
+            # Endereços IP
+            ipv4=$(echo "$ifconfig_output" | grep -oE 'inet [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | awk '{print $2}')
+            [ ! -z "$ipv4" ] && echo "IPv4: $ipv4"
+
+            ipv6=$(echo "$ifconfig_output" | grep -oE 'inet6 [0-9a-f:]+' | awk '{print $2}')
+            [ ! -z "$ipv6" ] && echo "IPv6: $ipv6"
+
+            # Estatísticas
+            rx=$(echo "$ifconfig_output" | grep -E 'RX packets|RX bytes' | grep -oE '[0-9]+ bytes' | head -n1 | awk '{print $1}')
+            tx=$(echo "$ifconfig_output" | grep -E 'TX packets|TX bytes' | grep -oE '[0-9]+ bytes' | head -n1 | awk '{print $1}')
+
+            if [ ! -z "$rx" ] && [ ! -z "$tx" ]; then
+                # Converte para MB
+                rx_mb=$(awk "BEGIN {printf \"%.2f\", $rx/1024/1024}")
+                tx_mb=$(awk "BEGIN {printf \"%.2f\", $tx/1024/1024}")
+                echo "Tráfego: RX: ${rx_mb} MB, TX: ${tx_mb} MB"
+            fi
+
+            # Tenta obter velocidade usando ethtool se disponível
+            if command_exists "ethtool" && [ "$status" = "UP" ]; then
+                ethtool_info=$(ethtool $iface 2>/dev/null)
+                speed=$(echo "$ethtool_info" | grep "Speed:" | awk '{print $2}')
+                duplex=$(echo "$ethtool_info" | grep "Duplex:" | awk '{print $2}')
+
+                [ ! -z "$speed" ] && echo "Velocidade: $speed"
+                [ ! -z "$duplex" ] && echo "Duplex: $duplex"
+            fi
+
+            echo ""
+        done
+    else
+        echo "Não foi possível obter informações detalhadas de rede. Os comandos 'ip' e 'ifconfig' não estão disponíveis."
+    fi
+
+    # Informações de roteamento
+    echo "=== TABELA DE ROTEAMENTO ==="
+    if command_exists "ip"; then
+        ip route
+    elif command_exists "route"; then
+        route -n
+    else
+        echo "Informações de roteamento não disponíveis."
+    fi
+
+    echo ""
+    echo "=== DNS CONFIGURADO ==="
+    if [ -f "/etc/resolv.conf" ]; then
+        grep nameserver /etc/resolv.conf
+    else
+        echo "Informações de DNS não disponíveis."
+    fi
+}
+
+# Função que tenta obter o IP WAN usando diferentes serviços
+get_wan_ip() {
+    local ip=""
+
+    # Lista de serviços para consultar o IP (em ordem de preferência)
+    local services=(
+        "curl -s https://api.ipify.org"
+        "curl -s https://ifconfig.me"
+        "curl -s https://icanhazip.com"
+        "curl -s https://ipecho.net/plain"
+        "wget -qO- https://api.ipify.org"
+        "wget -qO- https://ifconfig.me"
+        "wget -qO- https://icanhazip.com"
+    )
+
+    # Tenta cada serviço até obter um IP válido
+    for cmd in "${services[@]}"; do
+        # Extrai o comando base (curl ou wget)
+        base_cmd=$(echo "$cmd" | cut -d' ' -f1)
+
+        # Verifica se o comando existe
+        if command_exists "$base_cmd"; then
+            ip=$(eval "$cmd")
+
+            # Verifica se obteve um IP válido
+            if [[ -n "$ip" && "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "$ip"
+                return 0
+            fi
+        fi
+    done
+
+    # Se chegou aqui, não conseguiu obter o IP
+    echo "Não foi possível obter o IP WAN. Verifique sua conexão com a internet."
+    return 1
+}
+
+# Execução principal
+MODO="${1:-default}"
+
+case "$MODO" in
+    "ws")
+        # Modo "WAN Silent" - exibe apenas o IP WAN
+        get_wan_ip
+        ;;
+    "ls")
+        # Modo "LAN Silent" - exibe apenas o IP LAN
+        get_lan_ip
+        ;;
+    "hs")
+        # Modo "HOST Silent" - exibe apenas o hostname
+        hostname
+        ;;
+    "full")
+        # Modo detalhado - exibe todas as informações de rede
+        get_full_network_info
+        ;;
+    *)
+        # Modo padrão - exibe hostname, IP LAN e IP WAN
+        echo "Hostname: $(hostname)"
+        echo "IP LAN: $(get_lan_ip)"
+        echo "IP WAN: $(get_wan_ip)"
+        ;;
+esac
+
+exit $?
