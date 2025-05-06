@@ -1,8 +1,13 @@
 #!/bin/bash
 
 # Configurações
+
+# Variáveis de controle
+EMAIL_DESTINO="antonio.tedim@gmail.com"
+notifica="sim"
+
 ARQUIVO_HOSTS="/etc/scripts/zz_mon_hosts.txt"
-NUM_TENTATIVAS=15
+NUM_TENTATIVAS=3
 INTERVALO=2
 ARQUIVO_SAIDA="/etc/scripts/zz_mon_result.txt"
 PERCENTUAL_FALHA_CRITICO=70
@@ -50,16 +55,21 @@ monitorar_host() {
     local FALHAS=0
     local HORARIO_INICIO=""
     local HORARIO_FIM=""
-    local NOVO_ESTADO="OK"
+    local NOVO_ESTADO=""
     local RESULT=()
 
     {
         echo "===== Monitorando $HOSTNAME ($IP) ====="
 
-        for (( i=1; i<=NUM_TENTATIVAS; i++ )); do
+        # Registra horário de início antes da primeira tentativa
+        HORARIO_INICIO=$(date +"%H:%M:%S")
+
+        # Realiza as tentativas de ping
+        for (( i=0; i<NUM_TENTATIVAS; i++ )); do
             HORA=$(date +"%H:%M:%S")
-            [[ "$i" -eq 1 ]] && HORARIO_INICIO="$HORA"
-            [[ "$i" -eq $NUM_TENTATIVAS ]] && HORARIO_FIM="$HORA"
+
+            # Registra horário final na última tentativa
+            [[ "$i" -eq $((NUM_TENTATIVAS-1)) ]] && HORARIO_FIM="$HORA"
 
             if ping -c 1 -W 1 "$IP" > /dev/null 2>&1; then
                 RESULT[$i]="OK"
@@ -67,11 +77,15 @@ monitorar_host() {
                 RESULT[$i]="FALHA"
                 ((FALHAS++))
             fi
-            sleep "$INTERVALO"
+
+            # Não espera após a última tentativa
+            [[ "$i" -lt $((NUM_TENTATIVAS-1)) ]] && sleep "$INTERVALO"
         done
 
+        # Calcula percentual de falha
         local PERCENTUAL_FALHA=$((100 * FALHAS / NUM_TENTATIVAS))
 
+        # Determina o novo estado
         if [ "$FALHAS" -eq 0 ]; then
             echo "Todas as tentativas iniciadas em $HORARIO_INICIO e finalizadas em $HORARIO_FIM: OK"
             NOVO_ESTADO="OK"
@@ -80,40 +94,74 @@ monitorar_host() {
             echo "Resumo: $HOSTNAME teve 100% de falhas ($FALHAS de $NUM_TENTATIVAS)"
             NOVO_ESTADO="FALHA"
         else
-            for (( i=1; i<=NUM_TENTATIVAS; i++ )); do
-                HORA=$(date +"%H:%M:%S")
-                echo "Tentativa $i [$HORA]: ${RESULT[$i]}"
+            # Mostra cada tentativa individual
+            for (( i=0; i<NUM_TENTATIVAS; i++ )); do
+                echo "Tentativa $((i+1)) [${HORARIO_INICIO}-${HORARIO_FIM}]: ${RESULT[$i]}"
             done
 
-            NOVO_ESTADO="FALHA"
-
+            # Determina estado com base no percentual crítico
             if [ "$PERCENTUAL_FALHA" -gt "$PERCENTUAL_FALHA_CRITICO" ]; then
                 echo ">>> ALERTA: $HOSTNAME teve $PERCENTUAL_FALHA% de falhas ($FALHAS de $NUM_TENTATIVAS)"
+                NOVO_ESTADO="FALHA"
             else
                 echo "Resumo: $HOSTNAME teve $PERCENTUAL_FALHA% de falhas ($FALHAS de $NUM_TENTATIVAS)"
+                NOVO_ESTADO="OK"
             fi
         fi
 
         echo ""
 
-        # Verifica mudança de estado
+        # Verifica o estado anterior
+        local ESTADO_ANTERIOR="DESCONHECIDO"
         if [ -f "$ESTADO_ARQUIVO" ]; then
             ESTADO_ANTERIOR=$(cat "$ESTADO_ARQUIVO")
-        else
-            ESTADO_ANTERIOR="DESCONHECIDO"
         fi
 
+        # Registra o novo estado
+        echo "$NOVO_ESTADO" > "$ESTADO_ARQUIVO"
+
+        # Verifica se houve mudança de estado e notifica se necessário
         if [ "$ESTADO_ANTERIOR" != "$NOVO_ESTADO" ]; then
             TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
             echo "[$TIMESTAMP] $HOSTNAME ($IP): Estado alterado de $ESTADO_ANTERIOR para $NOVO_ESTADO" >> "$ARQUIVO_LOG_MUDANCA"
-        fi
 
-        echo "$NOVO_ESTADO" > "$ESTADO_ARQUIVO"
+            if [ "$notifica" = "sim" ]; then
+                TITULO=""
+                MENSAGEM=""
+                if [ "$NOVO_ESTADO" = "OK" ]; then
+                    TITULO="Recuperação: $HOSTNAME ($IP) voltou a ficar ativo"
+                    MENSAGEM="Host $HOSTNAME ($IP) voltou a ficar ativo.
+
+"
+                else
+                    TITULO="Alerta: $HOSTNAME ($IP) está Inacessível"
+                    MENSAGEM="Host $HOSTNAME ($IP) está inacessível.
+
+"
+                fi
+
+                # Usa quebras de linha adequadas em vez de \n literais
+                MENSAGEM+="Detalhes do teste:
+- Data e hora de início: $(date '+%F') $HORARIO_INICIO
+- Data e hora de término: $(date '+%F') $HORARIO_FIM
+- Quantidade de tentativas: $NUM_TENTATIVAS
+- Quantidade de tentativas realizadas até sucesso: $((NUM_TENTATIVAS - FALHAS))
+- Quantidade limite pra considerar falha: $PERCENTUAL_FALHA_CRITICO%
+- Endereço testado: $IP
+- Teste executado por: $(hostname)
+- IP do Host que realizou o teste: $(hostname -I | awk '{print $1}')"
+
+                # Envia email com o conteúdo apropriado (com quebras de linha reais)
+                zz_mail "$EMAIL_DESTINO" "$TITULO" "$MENSAGEM"
+            fi
+        fi
     } > "$SAIDA_TMP"
 }
 
 # Executa os testes em paralelo
 while IFS=',' read -r HOSTNAME IP; do
+    # Ignora linhas em branco ou comentários
+    [[ -z "$HOSTNAME" || "$HOSTNAME" =~ ^[[:space:]]*# ]] && continue
     monitorar_host "$HOSTNAME" "$IP" &
 done < "$ARQUIVO_HOSTS"
 
