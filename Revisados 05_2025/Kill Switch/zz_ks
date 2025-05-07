@@ -1,0 +1,146 @@
+#!/bin/bash
+
+# ==============================================================================
+# Verificador de prazo criptografado via HTTP
+# ------------------------------------------------------------------------------
+# Este script realiza as seguintes funções:
+#
+# 1. Atualiza a data/hora do sistema via NTP (obrigatório).
+# 2. Faz o download de um conteúdo criptografado (texto com data no formato YYYY-MM-DD).
+# 3. Descriptografa o conteúdo usando AES-256-CBC com PBKDF2.
+# 4. Calcula o número de dias entre a data descriptografada e a data atual.
+# 5. Avalia e classifica conforme os prazos definidos:
+#    - "soft" se ultrapassou o prazo leve.
+#    - "hard" se ultrapassou o prazo máximo.
+#    - Nenhuma saída se ainda dentro do prazo.
+#
+# ------------------------------------------------------------------------------
+# Variáveis internas configuráveis:
+#   SENHA          -> senha usada para descriptografar o conteúdo
+#   MAX_TENTATIVAS -> número máximo de tentativas de download
+#   INTERVALO      -> intervalo entre tentativas (em segundos)
+#   PRAZO_SOFT     -> dias até o aviso "soft"
+#   PRAZO_HARD     -> dias até o aviso "hard"
+#
+# ------------------------------------------------------------------------------
+# Parâmetros:
+#   -s             -> modo silencioso: imprime somente "soft", "hard" ou vazio
+#   <URL>          -> endereço completo do arquivo a ser baixado e processado
+#
+# ------------------------------------------------------------------------------
+# Exemplo de uso:
+#   ./verifica_data.sh http://exemplo.com/data.txt
+#   ./verifica_data.sh -s http://exemplo.com/data.txt
+#
+# ------------------------------------------------------------------------------
+# Requisitos:
+#   - `curl`
+#   - `openssl` com suporte a `-pbkdf2`
+#   - `ntpdate` para atualização de hora
+# ==============================================================================
+
+
+SENHA="minha_senha_super_secreta"
+
+# Configurações de download
+MAX_TENTATIVAS=5      # Número máximo de tentativas
+INTERVALO=3           # Intervalo entre tentativas em segundos
+
+# Prazos
+PRAZO_SOFT=32
+PRAZO_HARD=62
+
+# Detecta modo silencioso
+SILENCIOSO=0
+if [ "$1" == "-s" ]; then
+    SILENCIOSO=1
+    shift
+fi
+
+# Verifica se o parâmetro da URL foi passado
+ARQUIVO_URL="$1"
+if [ -z "$ARQUIVO_URL" ]; then
+    echo "Uso: $0 [-s] <URL_do_arquivo>"
+    exit 1
+fi
+
+# Função para log condicional
+log() {
+    [ "$SILENCIOSO" -ne 1 ] && echo "$@"
+}
+
+# Tenta atualizar a data/hora do sistema
+if ! ntpdate -q pool.ntp.org >/dev/null 2>&1; then
+    log "Erro ao atualizar data/hora via NTP. Encerrando."
+    exit 1
+fi
+
+# Tenta baixar o conteúdo com várias tentativas
+tentativa=1
+while [ $tentativa -le $MAX_TENTATIVAS ]; do
+    log "[INFO] Tentativa $tentativa de download..."
+    if content_secure=$(curl -fsSL "$ARQUIVO_URL"); then
+        log "[INFO] Download bem-sucedido."
+        break
+    fi
+    log "[WARN] Falha ao baixar. Aguardando $INTERVALO segundos..."
+    sleep $INTERVALO
+    tentativa=$((tentativa + 1))
+done
+
+# Falha final após todas tentativas
+if [ $tentativa -gt $MAX_TENTATIVAS ]; then
+    log "Erro: Todas as tentativas de download falharam. Encerrando."
+    exit 1
+fi
+
+log "[DEBUG] Conteúdo criptografado:"
+log "$content_secure"
+
+# Descriptografa o conteúdo usando PBKDF2
+if ! content_unsecure=$(echo "$content_secure" | openssl enc -aes-256-cbc -a -d -pbkdf2 -salt -pass pass:"$SENHA" 2>/dev/null); then
+    log "Erro ao descriptografar o conteúdo. Verifique a senha ou o formato."
+    exit 1
+fi
+
+log "[DEBUG] Conteúdo descriptografado:"
+log "$content_unsecure"
+
+# Verifica se a data está no formato correto
+DATA_BASE="$content_unsecure"
+if ! [[ "$DATA_BASE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    log "Data inválida ou fora do formato YYYY-MM-DD."
+    exit 1
+fi
+
+# Converte datas para segundos
+DATA_BASE_SEG=$(date -d "$DATA_BASE" +%s 2>/dev/null)
+HOJE_SEG=$(date +%s)
+
+if [ -z "$DATA_BASE_SEG" ]; then
+    log "Erro ao converter a data base."
+    exit 1
+fi
+
+# Calcula dias decorridos
+DIAS_DECORRIDOS=$(( (HOJE_SEG - DATA_BASE_SEG) / 86400 ))
+
+# Avalia o resultado
+resultado=""
+if [ "$DIAS_DECORRIDOS" -ge "$PRAZO_HARD" ]; then
+    resultado="hard"
+elif [ "$DIAS_DECORRIDOS" -ge "$PRAZO_SOFT" ]; then
+    resultado="soft"
+fi
+
+# Exibe resultados
+if [ "$SILENCIOSO" -eq 1 ]; then
+    echo "$resultado"
+else
+    log "Dias decorridos desde $DATA_BASE: $DIAS_DECORRIDOS"
+    if [ -n "$resultado" ]; then
+        log "Resultado: $resultado"
+    else
+        log "Resultado: ainda dentro do prazo inicial."
+    fi
+fi

@@ -1,0 +1,163 @@
+#!/bin/bash
+
+# ==============================================================================
+# Utilitário de Criptografia e Descriptografia de Datas
+# ------------------------------------------------------------------------------
+# Funções:
+#   - Criptografia leve: ROT13 + base64 + rev
+#   - Criptografia forte: AES-256-CBC com senha (pbkdf2)
+#   - Modo interativo com menu
+#   - Modo automático com parâmetros:
+#       -cl "DATA"     Criptografar leve
+#       -dl "STRING"   Descriptografar leve
+#       -cf "DATA"     Criptografar forte (requer senha)
+#       -df "STRING"   Descriptografar forte (requer senha)
+#       -p  "SENHA"    Senha para uso nas operações fortes (será descartada após uso)
+#       -h | --help    Exibe ajuda
+# ==============================================================================
+
+# Senha temporária (não persistente)
+SENHA=""
+
+# --- Funções de criptografia/descriptografia ---
+
+criptografar_leve() {
+    local DATA="$1"
+    echo "$DATA" | rev | base64 | tr 'A-Za-z' 'N-ZA-Mn-za-m'
+}
+
+descriptografar_leve() {
+    local DATA="$1"
+    echo "$DATA" | tr 'A-Za-z' 'N-ZA-Mn-za-m' | base64 --decode | rev
+}
+
+criptografar_forte() {
+    local DATA="$1"
+    obter_senha
+    echo -n "$DATA" | openssl enc -aes-256-cbc -a -salt -pbkdf2 -pass pass:"$SENHA"
+    unset SENHA
+}
+
+descriptografar_forte() {
+    local DATA="$1"
+    obter_senha
+    echo "$DATA" | openssl enc -aes-256-cbc -a -d -salt -pbkdf2 -pass pass:"$SENHA"
+    unset SENHA
+}
+
+obter_senha() {
+    if [ -z "$SENHA" ]; then
+        read -s -p "Digite a senha: " SENHA
+        echo
+    fi
+}
+
+exibir_ajuda() {
+    echo "Uso:"
+    echo "  $0 [opção] [valor] [-p senha]"
+    echo ""
+    echo "Opções disponíveis:"
+    echo "  -cl \"DATA\"     Criptografar leve"
+    echo "  -dl \"STRING\"   Descriptografar leve"
+    echo "  -cf \"DATA\"     Criptografar forte (requer senha)"
+    echo "  -df \"STRING\"   Descriptografar forte (requer senha)"
+    echo "  -p  \"SENHA\"    Senha para uso nas operações fortes (será descartada após uso)"
+    echo "  -h, --help      Exibe esta ajuda"
+    echo ""
+    echo "Sem argumentos, será iniciado o modo interativo."
+}
+
+menu() {
+    clear
+    echo "========================"
+    echo "   Criptografia de Data"
+    echo "========================"
+    echo "1) Criptografar (leve)"
+    echo "2) Descriptografar (leve)"
+    echo "3) Criptografar (forte)"
+    echo "4) Descriptografar (forte)"
+    echo "5) Sair"
+    echo "------------------------"
+    read -p "Escolha uma opção: " OPCAO
+
+    case "$OPCAO" in
+        1)
+            read -p "Digite a data (YYYY-MM-DD): " D
+            echo -n "Resultado: "
+            criptografar_leve "$D"
+            ;;
+        2)
+            read -p "Digite a string criptografada: " D
+            echo -n "Resultado: "
+            descriptografar_leve "$D"
+            ;;
+        3)
+            read -p "Digite a data (YYYY-MM-DD): " D
+            echo -n "Resultado: "
+            criptografar_forte "$D"
+            ;;
+        4)
+            read -p "Digite a string criptografada: " D
+            echo -n "Resultado: "
+            descriptografar_forte "$D"
+            ;;
+        5)
+            echo "Saindo..."
+            exit 0
+            ;;
+        *)
+            echo "Opção inválida!"
+            ;;
+    esac
+    echo
+    read -p "Pressione Enter para continuar..." dummy
+    menu
+}
+
+# === Modo automático com parâmetros ===
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -cl)
+            criptografar_leve "$2"
+            exit 0
+            ;;
+        -dl)
+            descriptografar_leve "$2"
+            exit 0
+            ;;
+        -cf)
+            DATA_F="$2"
+            shift
+            ;;
+        -df)
+            DATA_DF="$2"
+            shift
+            ;;
+        -p)
+            SENHA="$2"
+            shift
+            ;;
+        -h|--help)
+            exibir_ajuda
+            exit 0
+            ;;
+        *)
+            echo "Opção inválida: $1"
+            exibir_ajuda
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+# Execução dos comandos fortes com senha
+if [ -n "$DATA_F" ]; then
+    criptografar_forte "$DATA_F"
+    exit 0
+elif [ -n "$DATA_DF" ]; then
+    descriptografar_forte "$DATA_DF"
+    exit 0
+fi
+
+# === Se nada foi passado, modo interativo ===
+menu
