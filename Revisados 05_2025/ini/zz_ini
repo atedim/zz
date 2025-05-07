@@ -1,0 +1,107 @@
+#!/bin/bash
+
+#Exemplo de arquivo de  config
+#[familia1]
+#string1:valor11
+#string2:valor21
+#string3:valor31
+#string4:valor41
+#string5:valor51
+#
+#[familia2]
+#string1:valor12
+#string2:valor22
+#string3:valor32
+#string4:valor42
+#string5:valor52
+#
+#[familia3]
+#string1:valor13
+#string2:valor23
+#string3:valor33
+#string4:valor43
+#string5:valor53
+#
+#[familia4]
+#string1:valor14
+#string2:valor24
+#string3:valor34
+#string4:valor44
+#string5:valor54
+
+
+# ========= FUNÇÕES =========
+
+# Exibe uso
+uso() {
+    echo "Uso: $0 [-s] <arquivo.ini> <familia> <chave>"
+    echo "  -s    Modo silencioso (só imprime o valor limpo)"
+}
+
+# Busca o valor correspondente
+buscar_valor() {
+    local ini_file="$1"
+    local familia="$2"
+    local chave="$3"
+    local valor_encontrado=""
+
+    # Confirma se o arquivo existe
+    if [ ! -f "$ini_file" ]; then
+        [ "$modo_silencioso" != "sim" ] && echo "Erro: Arquivo '$ini_file' não encontrado." >&2
+        exit 1
+    fi
+
+    local in_familia="nao"
+
+    while IFS= read -r linha || [ -n "$linha" ]; do
+        # Remove espaços e tabs dos cantos
+        linha="$(echo "$linha" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+        # Pula linhas vazias ou comentários
+        [ -z "$linha" ] && continue
+        [[ "$linha" =~ ^# ]] && continue
+
+        # Detecta a seção
+        if [[ "$linha" =~ ^\[(.*)\]$ ]]; then
+            if [ "${BASH_REMATCH[1]}" = "$familia" ]; then
+                in_familia="sim"
+            else
+                [ "$in_familia" = "sim" ] && break
+                in_familia="nao"
+            fi
+            continue
+        fi
+
+        # Se estiver dentro da seção correta, busca a chave
+        if [ "$in_familia" = "sim" ]; then
+            if [[ "$linha" =~ ^$chave[[:space:]]*:[[:space:]]*(.*)$ ]]; then
+                valor_encontrado="${BASH_REMATCH[1]}"
+                echo "$valor_encontrado"
+                return 0
+            fi
+        fi
+    done < "$ini_file"
+
+    [ "$modo_silencioso" != "sim" ] && echo "Erro: Não encontrado [$familia] $chave" >&2
+    return 1
+}
+
+# ========= INÍCIO =========
+
+# Argumentos
+modo_silencioso="nao"
+if [ "$1" = "-s" ]; then
+    modo_silencioso="sim"
+    shift
+fi
+
+if [ "$#" -ne 3 ]; then
+    [ "$modo_silencioso" != "sim" ] && uso
+    exit 1
+fi
+
+arquivo="$1"
+familia="$2"
+chave="$3"
+
+buscar_valor "$arquivo" "$familia" "$chave"
