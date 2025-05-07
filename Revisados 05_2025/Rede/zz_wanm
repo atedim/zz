@@ -1,0 +1,81 @@
+#!/bin/bash
+
+# ========= CONFIGURAÇÕES =========
+localidade="Matriz_Albatroz"
+destinatario="antonio.tedim@gmail.com"
+dir_base="/etc/scripts/zz_wanm_logs/"
+arquivo_ip_antigo="$dir_base/wan_ip_atual.txt"
+log_alteracoes="$dir_base/wan_alteracoes.log"
+log_execucao="$dir_base/wan_monitor_execucao.log"
+data_hora="$(date '+%Y-%m-%d %H:%M:%S')"
+
+# ========= GARANTIR DIRETÓRIO =========
+mkdir -p "$dir_base"
+
+# ========= FUNÇÕES =========
+
+log_exec() {
+    echo "[$data_hora] $1" >> "$log_execucao"
+}
+
+log_alteracao() {
+    echo "[$data_hora] $1" >> "$log_alteracoes"
+}
+
+enviar_email() {
+    titulo="Alteração WAN - $localidade"
+    mensagem="Data/Hora: $data_hora
+    Localidade: $localidade
+    IP WAN anterior: $ip_antigo
+    IP WAN atual: $ip_atual"
+    if ! zz_mail "$destinatario" "$titulo" "$mensagem"; then
+        log_exec "Erro ao enviar e-mail."
+    fi
+}
+
+# ========= EXECUÇÃO =========
+
+# Verifica se o comando zz_ip está disponível
+if ! command -v zz_ip >/dev/null 2>&1; then
+    log_exec "Erro: comando zz_ip não encontrado."
+    exit 1
+fi
+
+# Obtém o IP atual
+ip_atual="$(zz_ip ws 2>/dev/null)"
+if [ -z "$ip_atual" ]; then
+    log_exec "Erro ao obter IP WAN atual."
+    exit 1
+fi
+
+# Carrega o IP antigo (se existir)
+if [ -f "$arquivo_ip_antigo" ]; then
+    ip_antigo="$(cat "$arquivo_ip_antigo")"
+else
+    ip_antigo=""
+fi
+
+# Compara os IPs
+if [ "$ip_atual" == "$ip_antigo" ]; then
+    log_exec "IP WAN não mudou. Encerrando normalmente."
+    exit 0
+fi
+
+# Salva novo IP
+echo "$ip_atual" > "$arquivo_ip_antigo"
+
+# Atualiza DDNS
+if ! zz_ddns; then
+    log_exec "Erro ao atualizar DDNS."
+else
+    log_exec "DDNS atualizado com sucesso."
+fi
+
+# Envia e-mail
+enviar_email
+
+# Log de alteração
+log_alteracao "Alteração detectada: $ip_antigo -> $ip_atual"
+
+# Finaliza com sucesso
+exit 0
