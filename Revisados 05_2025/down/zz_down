@@ -1,0 +1,309 @@
+#!/bin/bash
+
+# zz_down - Gerenciador de instalação de scripts personalizados
+
+DIR_SCRIPTS="/etc/scripts"
+DIR_OLD="$DIR_SCRIPTS/old"
+DIR_LOGS="$DIR_SCRIPTS/zz_down_logs"
+INI="zz_down.ini"
+
+[ "$EUID" -ne 0 ] && echo "Este script deve ser executado como root." && exit 1
+ntpdate pool.ntp.org >/dev/null 2>&1
+mkdir -p "$DIR_SCRIPTS" "$DIR_OLD" "$DIR_LOGS"
+
+# Verifica se dos2unix está instalado
+verificar_dos2unix() {
+    if ! command -v dos2unix &> /dev/null; then
+        echo "AVISO: 'dos2unix' não está instalado no sistema."
+        #echo "Para garantir a compatibilidade dos scripts, recomenda-se instalar com:"
+        #echo "apt-get install -y dos2unix"
+        #echo "A conversão DOS->UNIX será ignorada para os scripts instalados."
+        registrar_log "AVISO" "dos2unix não encontrado no sistema"
+        return 1
+    fi
+    return 0
+}
+
+# Verifica dos2unix no início
+DOS2UNIX_DISPONIVEL=0
+if verificar_dos2unix; then
+    DOS2UNIX_DISPONIVEL=1
+fi
+
+registrar_log() {
+    local operacao="$1"
+    local nome="$2"
+    local data=$(date "+%Y-%m-%d %H:%M:%S")
+    local arquivo_log="$DIR_LOGS/zz_down_$(date +%Y%m%d).log"
+    echo "[$data] $operacao: $nome" >> "$arquivo_log"
+}
+
+ajustar_permissao_execucao() {
+    chown root:root "$1"
+    chmod +x "$1"
+    
+    # Converter formato DOS para UNIX se dos2unix estiver disponível
+    if [ "$DOS2UNIX_DISPONIVEL" -eq 1 ]; then
+        dos2unix "$1" 2>/dev/null
+        registrar_log "Conversão DOS->UNIX" "$(basename "$1")"
+    fi
+}
+
+ajustar_path() {
+    grep -q "$DIR_SCRIPTS" ~/.bashrc || {
+        sed -i -e '$a\n' ~/.bashrc
+        echo "export PATH=\$PATH:$DIR_SCRIPTS" >> ~/.bashrc
+    }
+    export PATH=$PATH:$DIR_SCRIPTS
+    registrar_log "PATH Ajustado" "$DIR_SCRIPTS"
+}
+
+info_programa() {
+    read -p "Nome do programa: " nome
+    desc=$(zz_ini -s "$INI" "$nome" "descricao")
+    if [ -z "$desc" ]; then
+        echo "Programa '$nome' não encontrado no arquivo INI."
+    else
+        echo "$desc"
+    fi
+}
+
+instalar_script() {
+    nome="$1"
+    url=$(zz_ini -s "$INI" "$nome" "url")
+    [ -z "$url" ] && echo "Programa '$nome' não encontrado." && return 1
+    destino="$DIR_SCRIPTS/$nome"
+
+    if [ -f "$destino" ]; then
+        data=$(date +%d%m%Y)
+        novo="$DIR_OLD/${nome}_${data}.OLD"
+        mv "$destino" "$novo"
+        chmod -x "$novo"
+        registrar_log "Backup" "$nome (para $novo)"
+    fi
+
+    # Tenta fazer o download com curl ou wget com 3 tentativas e timeout
+    for tentativa in 1 2 3; do
+        echo "Tentativa $tentativa de download de $nome..."
+        if curl -fsSL --connect-timeout 10 --retry 3 --retry-delay 5 "$url" -o "$destino" 2>/dev/null; then
+            break
+        elif wget -q --timeout=10 --tries=3 --waitretry=5 "$url" -O "$destino" 2>/dev/null; then
+            break
+        elif [ $tentativa -eq 3 ]; then
+            echo "Falha ao baixar $nome após 3 tentativas."
+            registrar_log "Erro de Download" "$nome - URL: $url"
+            return 1
+        else
+            echo "Tentativa $tentativa falhou. Aguardando 5 segundos antes de tentar novamente..."
+            sleep 5
+        fi
+    done
+    
+    if [ -f "$destino" ] && [ -s "$destino" ]; then
+        ajustar_permissao_execucao "$destino"
+        registrar_log "Instalação" "$nome"
+        return 0
+    else
+        echo "Arquivo baixado está vazio ou não existe."
+        rm -f "$destino" 2>/dev/null
+        registrar_log "Erro de Download" "$nome - Arquivo vazio ou inexistente"
+        return 1
+    fi
+}
+
+instalar_todos() {
+    echo "Iniciando instalação de todos os scripts..."
+    total=0
+    sucesso=0
+    falha=0
+    for nome in $(zz_ini -l "$INI"); do
+        echo "Instalando $nome..."
+        total=$((total + 1))
+        # Adiciona um intervalo de 2 segundos entre as requisições para evitar erro 429
+        [ $total -gt 1 ] && sleep 2
+        if instalar_script "$nome"; then
+            sucesso=$((sucesso + 1))
+            echo "✓ $nome instalado com sucesso"
+        else
+            falha=$((falha + 1))
+            echo "✗ Falha ao instalar $nome"
+        fi
+    done
+    echo "Instalação concluída: $sucesso/$total scripts instalados com sucesso."
+    registrar_log "Instalação em Massa" "Total: $total, Sucesso: $sucesso, Falha: $falha"
+}
+
+listar_instalados() {
+    find "$DIR_SCRIPTS" -maxdepth 1 -type f -executable -name "zz_*" \
+    ! -name "*.*" -exec basename {} \;
+}
+
+atualizar_instalados() {
+    echo "Iniciando atualização de scripts instalados..."
+    total=0
+    sucesso=0
+    falha=0
+    
+    for script in $(listar_instalados); do
+        nome="$script"
+        echo "Verificando $nome..."
+        url=$(zz_ini -s "$INI" "$nome" "url")
+        
+        if [ -z "$url" ]; then
+            echo "Pulando $nome: URL não encontrada no INI"
+            continue
+        fi
+        
+        total=$((total + 1))
+        # Adiciona um intervalo de 2 segundos entre as requisições para evitar erro 429
+        [ $total -gt 1 ] && sleep 2
+        
+        echo "Atualizando $nome..."
+        data=$(date +%d%m%Y)
+        antigo="$DIR_SCRIPTS/$nome"
+        novo="$DIR_OLD/${nome}_${data}.OLD"
+        
+        # Backup do script atual
+        mv "$antigo" "$novo"
+        chmod -x "$novo"
+        registrar_log "Backup para Atualização" "$nome (para $novo)"
+        
+        # Tenta fazer o download com curl ou wget com 3 tentativas e timeout
+        download_ok=0
+        for tentativa in 1 2 3; do
+            echo "Tentativa $tentativa de download de $nome..."
+            if curl -fsSL --connect-timeout 10 --retry 3 --retry-delay 5 "$url" -o "$antigo" 2>/dev/null; then
+                download_ok=1
+                break
+            elif wget -q --timeout=10 --tries=3 --waitretry=5 "$url" -O "$antigo" 2>/dev/null; then
+                download_ok=1
+                break
+            elif [ $tentativa -eq 3 ]; then
+                echo "Falha ao baixar $nome após 3 tentativas."
+                registrar_log "Erro de Atualização" "$nome - URL: $url"
+                # Restaura backup em caso de falha
+                mv "$novo" "$antigo"
+                ajustar_permissao_execucao "$antigo"
+                falha=$((falha + 1))
+            else
+                echo "Tentativa $tentativa falhou. Aguardando 5 segundos antes de tentar novamente..."
+                sleep 5
+            fi
+        done
+        
+        if [ $download_ok -eq 1 ]; then
+            if [ -f "$antigo" ] && [ -s "$antigo" ]; then
+                ajustar_permissao_execucao "$antigo"
+                registrar_log "Atualização" "$nome"
+                echo "✓ $nome atualizado com sucesso"
+                sucesso=$((sucesso + 1))
+            else
+                echo "Arquivo baixado está vazio ou não existe."
+                rm -f "$antigo" 2>/dev/null
+                # Restaura backup em caso de falha
+                mv "$novo" "$antigo"
+                ajustar_permissao_execucao "$antigo"
+                registrar_log "Erro de Atualização" "$nome - Arquivo vazio ou inexistente"
+                falha=$((falha + 1))
+            fi
+        fi
+    done
+    
+    echo "Atualização concluída: $sucesso/$total scripts atualizados com sucesso."
+    registrar_log "Atualização em Massa" "Total: $total, Sucesso: $sucesso, Falha: $falha"
+}
+
+instalar_por_categoria() {
+    read -p "Digite a categoria: " categoria
+    for nome in $(zz_ini -l "$INI"); do
+        c=$(zz_ini -s "$INI" "$nome" "categoria")
+        [ "$c" = "$categoria" ] || continue
+        instalar_script "$nome"
+    done
+    registrar_log "Instalação por Categoria" "Categoria: $categoria"
+}
+
+instalar_por_numero() {
+    i=1
+    echo "Programas disponíveis:"
+    for nome in $(zz_ini -l "$INI"); do
+        desc=$(zz_ini -s "$INI" "$nome" "descricao")
+        echo "$i) $nome - $desc"
+        i=$((i + 1))
+    done
+    read -p "Digite o número do programa a instalar (ou Enter para voltar): " num
+    
+    # Verifica se foi digitado apenas Enter (string vazia)
+    if [ -z "$num" ]; then
+        echo "Voltando ao menu principal..."
+        return
+    fi
+    
+    # Verifica se é um número válido
+    if ! [[ "$num" =~ ^[0-9]+$ ]]; then
+        echo "Erro: digite apenas números."
+        return
+    fi
+    
+    i=1
+    for nome in $(zz_ini -l "$INI"); do
+        if [ "$i" -eq "$num" ]; then
+            instalar_script "$nome"
+            return
+        fi
+        i=$((i + 1))
+    done
+    echo "Erro: número '$num' não encontrado na lista."
+}
+
+executar_menu() {
+while true; do
+    echo ""
+    echo "=========== MENU ==========="
+    echo "1 - Listar Programas Disponíveis"
+    echo "2 - Instalar Todos"
+    echo "3 - Listar Instalados"
+    echo "4 - Atualizar Instalados"
+    echo "5 - Ajustar PATH"
+    echo "6 - Ajustar Permissão"
+    echo "7 - Instalar por Categoria"
+    echo "8 - Sair"
+    echo "============================"
+    read -p "Escolha uma opção: " opcao
+
+    case "$opcao" in
+        1) instalar_por_numero;;
+        2) instalar_todos;;
+        3) listar_instalados;;
+        4) atualizar_instalados;;
+        5) ajustar_path;;
+        6) for f in "$DIR_SCRIPTS"/zz_*; do [ -f "$f" ] && ajustar_permissao_execucao "$f"; done
+           registrar_log "Ajuste de Permissões" "Scripts zz_*";;
+        7) instalar_por_categoria;;
+        8) exit 0;;
+        *) echo "Opção inválida.";;
+
+    esac
+done
+}
+
+# Chamadas diretas
+if [ "$1" = "up" ]; then
+    ajustar_path
+    atualizar_instalados
+    exit
+elif [ -n "$1" ]; then
+    entrada="$1"
+    if [[ "$entrada" =~ ^[0-9]+$ ]]; then
+        i=1
+        for nome in $(zz_ini -l "$INI"); do
+            [ "$i" -eq "$entrada" ] && entrada="$nome" && break
+            i=$((i + 1))
+        done
+    fi
+    ajustar_path
+    instalar_script "$entrada"
+    exit
+fi
+
+executar_menu
