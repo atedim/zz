@@ -1,0 +1,100 @@
+#!/bin/bash
+
+#!/bin/bash
+
+##########################################################################
+# SCRIPT DE BACKUP DE CONFIGURAÇÕES DE SISTEMA
+#
+# Nome.........: zz_bkpcfg
+# Descrição....: Realiza o backup de diretórios importantes e da crontab
+#                para um arquivo .tar.gz, mantendo apenas backups recentes.
+# Autor........: Antonio Tedim
+# Data criação.: 26/01/2024
+# Última modif.: 09/05/2025
+#
+# Funcionalidades:
+#   - Gera backup compactado (.tgz) com data e hostname no nome.
+#   - Exclui backups com mais de X dias, conforme variável `dias_reter`.
+#   - Cria diretórios de destino automaticamente se não existirem.
+#   - Gera arquivo com crontab atual em /etc/scripts/cron.txt.
+#   - Permite evitar exclusão de backups antigos com a flag `-nodel`.
+#
+# Uso:
+#   ./backup_configs.sh         -> Executa backup e remove arquivos antigos
+#   ./backup_configs.sh -nodel -> Executa backup sem excluir backups antigos
+#
+# Variáveis principais:
+#   dias_reter..........: Quantidade de dias que os backups serão mantidos
+#   diretorio_destino...: Caminho onde os arquivos de backup são salvos
+#   diretorios..........: Diretórios que serão incluídos no backup
+#   excluidos...........: Diretórios que serão excluídos do backup
+#
+##########################################################################
+
+
+
+# Função para verificar se o diretório existe e criar, se necessário
+verifica_ou_cria_diretorio() {
+    if [ ! -d "$1" ]; then
+        echo "Diretório '$1' não existe. Criando..."
+        mkdir -p "$1"
+    fi
+}
+
+# Função para excluir backups antigos, mantendo apenas os últimos X dias
+limpa_backups_antigos() {
+    if [ "$flag_nodel" != "sim" ]; then
+        echo "Removendo backups com mais de $dias_reter dias em $diretorio_destino..."
+        find "$diretorio_destino" -name "*_configs_*.tgz" -type f -mtime +$dias_reter -exec rm -f {} \;
+    else
+        echo "Flag -nodel ativada. Nenhum backup antigo será excluído."
+    fi
+}
+
+# Checa se foi passada a flag -nodel
+flag_nodel="nao"
+if [[ "$1" == "-nodel" ]]; then
+    flag_nodel="sim"
+fi
+
+# Quantidade de dias para manter backups
+dias_reter=8
+
+# Obtém a data no formato DDMMAAAA
+data=$(date +"%d%m%Y")
+
+# Obtém o hostname da máquina
+host=$(hostname)
+
+# Define o nome do arquivo com base na data e hostname
+arquivo="${host}_configs_${data}.tgz"
+
+# Diretório de destino
+diretorio_destino="/etc/scripts/bkp_configs"
+
+# Diretórios a serem incluídos no arquivo
+diretorios="/etc/scripts /etc/ssh /etc/samba"
+
+# Diretórios a serem excluídos no arquivo
+excluidos="/etc/scripts/bkp_configs"
+
+# Garante que o diretório de destino existe
+verifica_ou_cria_diretorio "$diretorio_destino"
+
+# Executa o comando crontab -l e salva em um arquivo
+crontab -l > "/etc/scripts/cron.txt"
+
+# Monta os parâmetros de exclusão
+exclui_args=""
+for excluido in $excluidos; do
+    exclui_args+="--exclude=$excluido "
+done
+
+# Cria o arquivo tar.gz com exclusões
+tar zcvfp "${diretorio_destino}/${arquivo}" $exclui_args $diretorios
+
+# Limpa backups antigos
+limpa_backups_antigos
+
+# Exibe uma mensagem indicando que o processo foi concluído
+echo "Backup diário e crontab concluídos em $(date +"%Y-%m-%d %H:%M:%S")"
