@@ -3,6 +3,14 @@
 # script para salvar configurações de servidores
 # criado em 26/01/2024 por Antonio Tedim
 
+# Função para verificar se o diretório existe e criar, se necessário
+verifica_ou_cria_diretorio() {
+    if [ ! -d "$1" ]; then
+        echo "Diretório '$1' não existe. Criando..."
+        mkdir -p "$1"
+    fi
+}
+
 # Obtém a data no formato DDMMAAAA
 data=$(date +"%d%m%Y")
 
@@ -13,16 +21,29 @@ host=$(hostname)
 arquivo="${host}_configs_${data}.tgz"
 
 # Diretório de destino
-diretorio_destino="/etc/scripts/configs"
+diretorio_destino="/etc/scripts/bkp_configs"
 
 # Diretórios a serem incluídos no arquivo
 diretorios="/etc/scripts /etc/ssh /etc/samba"
 
+# Diretórios a serem excluídos no arquivo
+excluidos="/etc/scripts/bkp_configs"
+
+# Garante que o diretório de destino existe
+verifica_ou_cria_diretorio "$diretorio_destino"
+
+
 # Executa o comando crontab -l e salva em um arquivo
 crontab -l > "/etc/scripts/cron.txt"
 
-# Cria o arquivo tar.gz
-tar zcvfp "${diretorio_destino}/${arquivo}" $diretorios
+# Monta os parâmetros de exclusão
+exclui_args=""
+for excluido in $excluidos; do
+    exclui_args+="--exclude=$excluido "
+done
+
+# Cria o arquivo tar.gz com exclusões
+tar zcvfp "${diretorio_destino}/${arquivo}" $exclui_args $diretorios
 
 # Exibe uma mensagem indicando que o processo foi concluído
 echo "Backup diário e crontab concluídos em $(date +"%Y-%m-%d %H:%M:%S")"
