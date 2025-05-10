@@ -1,0 +1,6 @@
+Validar zz_bkpcfg
+
+
+colocar zz_bkpcfg em todos os servers da base
+colocar zz_bkpcfg em todos os servers das filiais
+
