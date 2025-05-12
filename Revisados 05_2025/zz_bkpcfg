@@ -38,7 +38,7 @@ verifica_ou_cria_diretorio() {
 limpa_backups_antigos() {
     if [ "$flag_nodel" != "sim" ]; then
         echo "Removendo backups com mais de $dias_reter dias em $diretorio_destino..."
-        find "$diretorio_destino" -name "*_configs_*.tgz" -type f -mtime +$dias_reter -exec rm -f {} \;
+             find "$diretorio_destino" -name "*_configs_*.tgz" -type f -mtime +$((dias_reter - 1)) -exec rm -f {} \;
     else
         echo "Flag -nodel ativada. Nenhum backup antigo será excluído."
     fi
@@ -55,7 +55,7 @@ for arg in "$@"; do
 done
 
 # Quantidade de dias para manter backups
-dias_reter=2
+dias_reter=7
 
 # Diretórios e exclusões
 diretorios="/etc/scripts /etc/ssh /etc/samba"
