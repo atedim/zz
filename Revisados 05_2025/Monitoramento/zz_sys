@@ -119,19 +119,19 @@ echo -e "\n>>> ${YELLOW}Espaço em disco:${NC}"
 df -h | awk 'NR>1 && $1 !~ /^(tmpfs|udev)/ {
     disk_use = $5;
     gsub(/%/, "", disk_use);  # Remove o símbolo de porcentagem
-    
+
     # Determina cor baseada no uso de disco
     color = "\033[0;32m"  # verde por padrão
     if (disk_use >= 90) color = "\033[0;31m"  # vermelho se > 90%
     else if (disk_use >= 80) color = "\033[0;33m"  # amarelo se > 80%
-    
+
     printf "%s• Ponto de Montagem: %s\n", color, $6;
     printf "  Dispositivo: %s\n", $1;
     printf "  Tamanho Total: %s\n", $2;
     printf "  Espaço Usado: %s\n", $3;
     printf "  Espaço Disponível: %s\n", $4;
-    printf "  Percentual de Uso: %s%%\033[0m\n", $5;
-    
+    printf "  Percentual de Uso: %s%%\033[0m\n", disk_use;
+
     if (disk_use >= 80) {
         printf "  ⚠️ ALERTA: Uso de disco acima de 80%%!\n";
     }
