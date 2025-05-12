@@ -1,0 +1,194 @@
+#!/bin/bash
+
+# Sistema de Monitoramento - Script Melhorado
+
+# Configurações
+LIMITE_DISCO=80
+SERVICOS=("ssh" "cron" "smbd" "postgresql" "docker")
+TOP_PROCESSOS=5
+LIMITE_CPU_ALTO=50  # Porcentagem de CPU considerada alta
+LIMITE_MEMORIA_ALTO=50  # Porcentagem de memória considerada alta
+
+# Configurações de Logging
+LOG_DIR="/etc/scripts/logs"
+LOG_FILENAME="zz_sys_$(date +%d%m%Y).log"
+FULL_LOG_PATH="${LOG_DIR}/${LOG_FILENAME}"
+
+# Configurações de Ping
+HOST_INTERNO="192.168.1.1"    # Substituir pelo IP interno relevante
+HOST_EXTERNO="8.8.8.8"        # Google DNS como padrão
+PING_COUNT=5                  # Número de pacotes para teste
+
+# Definições de cores
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+GREEN='\033[0;32m'
+NC='\033[0m' # Sem cor
+
+# Função para criar diretório de logs se não existir
+criar_diretorio_logs() {
+    if [ ! -d "$LOG_DIR" ]; then
+        mkdir -p "$LOG_DIR"
+    fi
+}
+
+# Função para redirecionar saída para log e tela
+log_and_print() {
+    criar_diretorio_logs
+    tee -a "$FULL_LOG_PATH"
+}
+
+# Função para realizar teste de ping e retornar resumo
+teste_ping() {
+    local host=$1
+    local host_tipo=$2
+    local ping_result
+    
+    # Executa ping e captura saída
+    ping_result=$(ping -c "$PING_COUNT" "$host" 2>&1)
+    
+    # Extrai estatísticas
+    local pacotes_transmitidos=$(echo "$ping_result" | grep "packets transmitted" | awk '{print $1}')
+    local pacotes_recebidos=$(echo "$ping_result" | grep "packets transmitted" | awk '{print $4}')
+    local perda_pacotes=$(echo "$ping_result" | grep "packet loss" | awk '{print $6}')
+    local tempo_min=$(echo "$ping_result" | grep "min/avg/max" | awk -F'/' '{print $4}')
+    local tempo_avg=$(echo "$ping_result" | grep "min/avg/max" | awk -F'/' '{print $5}')
+    local tempo_max=$(echo "$ping_result" | grep "min/avg/max" | awk -F'/' '{print $6}')
+    
+    # Determina cor com base na perda de pacotes
+    local status_color=$GREEN
+    if [[ -z "$pacotes_recebidos" ]] || [[ $(echo "$perda_pacotes" | tr -d '%') -gt 20 ]]; then
+        status_color=$RED
+    elif [[ $(echo "$perda_pacotes" | tr -d '%') -gt 0 ]]; then
+        status_color=$YELLOW
+    fi
+    
+    # Exibe resultado
+    printf "${YELLOW}>>> Teste de Ping %s (%s):${NC}\n" "$host_tipo" "$host" | log_and_print
+    printf "  ${status_color}• Pacotes: %s transmitidos, %s recebidos\n" "$pacotes_transmitidos" "$pacotes_recebidos" | log_and_print
+    printf "  • Perda de pacotes: %s\n" "$perda_pacotes" | log_and_print
+    printf "  • Tempo (min/avg/max): %s/%s/%s ms${NC}\n\n" "$tempo_min" "$tempo_avg" "$tempo_max" | log_and_print
+}
+
+# Redireciona toda a saída para log e tela
+exec > >(log_and_print) 2>&1
+
+# Limpar tela antes do relatório
+clear
+
+# Cabeçalho do relatório
+echo -e "${GREEN}===== MONITORAMENTO DO SISTEMA =====${NC}"
+echo "Data/Hora: $(date)"
+echo "Hostname: $(hostname)"
+echo "Uptime: $(uptime -p)"
+
+# Interfaces de rede e IPs
+echo -e "\n>>> ${YELLOW}Interfaces de rede e IPs:${NC}"
+ip -o -4 addr show 2>/dev/null | awk '{print $2 ": " $4}' || echo "Não foi possível listar interfaces de rede."
+
+# Verifica atualizações disponíveis (Debian/apt)
+echo -e "\n>>> ${YELLOW}Atualizações disponíveis:${NC}"
+# Suprime o aviso de CLI instável e erros de saída
+DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null
+
+# Verifica pacotes atualizáveis
+UPGRADABLE=$(apt list --upgradable 2>/dev/null | grep -v "Listing" | wc -l)
+if [ "$UPGRADABLE" -gt 0 ]; then
+    echo "Há $UPGRADABLE pacotes que podem ser atualizados:"
+    apt list --upgradable 2>/dev/null | grep -v "Listing"
+else
+    echo "Todos os pacotes estão atualizados."
+fi
+
+# Verificação de serviços essenciais
+echo -e "\n>>> ${YELLOW}Serviços essenciais:${NC}"
+for serv in "${SERVICOS[@]}"; do
+    if systemctl list-units --type=service | grep -q "$serv"; then
+        STATUS=$(systemctl is-active "$serv" 2>/dev/null)
+        STATUS_COLOR=${GREEN}
+        [ "$STATUS" != "active" ] && STATUS_COLOR=${RED}
+        echo -e " - $serv: ${STATUS_COLOR}$STATUS${NC}"
+    else
+        echo -e " - $serv: ${YELLOW}(não encontrado)${NC}"
+    fi
+done
+
+# Verificação de espaço em disco (todas partições montadas)
+echo -e "\n>>> ${YELLOW}Espaço em disco:${NC}"
+# Usa df com formatação mais legível
+df -h | awk 'NR>1 && $1 !~ /^(tmpfs|udev)/ {
+    disk_use = $5;
+    gsub(/%/, "", disk_use);  # Remove o símbolo de porcentagem
+    
+    # Determina cor baseada no uso de disco
+    color = "\033[0;32m"  # verde por padrão
+    if (disk_use >= 90) color = "\033[0;31m"  # vermelho se > 90%
+    else if (disk_use >= 80) color = "\033[0;33m"  # amarelo se > 80%
+    
+    printf "%s• Ponto de Montagem: %s\n", color, $6;
+    printf "  Dispositivo: %s\n", $1;
+    printf "  Tamanho Total: %s\n", $2;
+    printf "  Espaço Usado: %s\n", $3;
+    printf "  Espaço Disponível: %s\n", $4;
+    printf "  Percentual de Uso: %s%%\033[0m\n", $5;
+    
+    if (disk_use >= 80) {
+        printf "  ⚠️ ALERTA: Uso de disco acima de 80%%!\n";
+    }
+    printf "\n";
+}'
+
+# Top processos que mais consomem CPU
+echo -e "\n>>> ${YELLOW}Top $TOP_PROCESSOS Processos por Uso de CPU:${NC}"
+# Usa ps com formato específico para garantir consistência
+# Modificado para lidar com diferentes locales e formatos de número
+ps -eo pid,pcpu,user,comm | LC_NUMERIC=C sort -k2 -nr | head -n $TOP_PROCESSOS | awk '
+    # Converte vírgula para ponto se necessário
+    {
+        cpu_value = $2;
+        gsub(/,/, ".", cpu_value);
+        
+        cpu_color = "\033[0;32m"  # verde por padrão
+        if (cpu_value > 50) cpu_color = "\033[0;31m"  # vermelho se > 50%
+        else if (cpu_value > 25) cpu_color = "\033[0;33m"  # amarelo se > 25%
+        
+        printf "%s%-6s %s%-6.1f%% %s%-12s %s%s\033[0m\n", 
+               cpu_color, $1,    # PID 
+               cpu_color, cpu_value,  # CPU% (com 1 casa decimal)
+               cpu_color, $3,    # Usuário
+               cpu_color, $4     # Comando
+    }
+'
+
+# Top processos que mais consomem Memória
+echo -e "\n>>> ${YELLOW}Top $TOP_PROCESSOS Processos por Uso de Memória:${NC}"
+# Usa ps com formato específico para garantir consistência
+# Modificado para lidar com diferentes locales e formatos de número
+ps -eo pid,pmem,user,comm | LC_NUMERIC=C sort -k2 -nr | head -n $TOP_PROCESSOS | awk '
+    # Converte vírgula para ponto se necessário
+    {
+        mem_value = $2;
+        gsub(/,/, ".", mem_value);
+        
+        mem_color = "\033[0;32m"  # verde por padrão
+        if (mem_value > 50) mem_color = "\033[0;31m"  # vermelho se > 50%
+        else if (mem_value > 25) mem_color = "\033[0;33m"  # amarelo se > 25%
+        
+        printf "%s%-6s %s%-6.1f%% %s%-12s %s%s\033[0m\n", 
+               mem_color, $1,    # PID 
+               mem_color, mem_value,  # MEM% (com 1 casa decimal)
+               mem_color, $3,    # Usuário
+               mem_color, $4     # Comando
+    }
+'
+
+# Testes de Ping
+echo -e "\n${YELLOW}>>> Testes de Conectividade (Ping):${NC}"
+# Teste para host interno
+teste_ping "$HOST_INTERNO" "Host Interno"
+
+# Teste para host externo
+teste_ping "$HOST_EXTERNO" "Host Externo"
+
+echo -e "\n${GREEN}===== FIM DO RELATÓRIO =====${NC}"
+echo "Log salvo em: $FULL_LOG_PATH"

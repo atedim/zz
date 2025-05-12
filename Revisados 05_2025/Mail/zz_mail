@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#!/bin/bash
+
 mostrar_ajuda() {
     echo "Uso: $0 DESTINATARIO ASSUNTO MENSAGEM [ANEXO]"
     echo ""
@@ -62,7 +64,7 @@ EOF
     exit 0
 fi
 
-# Verifica se ~/.msmtprc existe; se não, cria
+# Verifica ~/.msmtprc
 CONFIG="$HOME/.msmtprc"
 if [ ! -f "$CONFIG" ]; then
     echo "Arquivo ~/.msmtprc não encontrado. Vamos criá-lo agora."
@@ -94,15 +96,15 @@ EOF
 fi
 
 # Verifica dependências
-for cmd in msmtp uuencode; do
+for cmd in msmtp mime-construct; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "Erro: O comando '$cmd' não está instalado."
         case "$cmd" in
             msmtp)
                 echo "Você pode instalar com: sudo apt install msmtp msmtp-mta"
                 ;;
-            uuencode)
-                echo "Você pode instalar com: sudo apt install sharutils"
+            mime-construct)
+                echo "Você pode instalar com: sudo apt install mime-construct"
                 ;;
         esac
         exit 2
@@ -119,22 +121,17 @@ ASSUNTO="$2"
 MENSAGEM="$3"
 ANEXO="$4"
 
-EMAIL_TMP=$(mktemp)
-
-# Gera corpo do e-mail
-{
-    echo "To: $EMAIL_DESTINO"
-    echo "Subject: $ASSUNTO"
-    echo "Content-Type: text/plain; charset=utf-8"
-    echo ""
-    echo "$MENSAGEM"
-} > "$EMAIL_TMP"
-
-# Envia com ou sem anexo
+# Envia com ou sem anexo usando mime-construct
 if [ -n "$ANEXO" ] && [ -f "$ANEXO" ]; then
-    (cat "$EMAIL_TMP"; uuencode "$ANEXO" "$(basename "$ANEXO")") | msmtp "$EMAIL_DESTINO"
+    mime-construct \
+        --to "$EMAIL_DESTINO" \
+        --subject "$ASSUNTO" \
+        --string "$MENSAGEM" \
+        --file-attach "$ANEXO"  | msmtp "$EMAIL_DESTINO"
+#        --file-name "$(basename "$ANEXO")" | msmtp "$EMAIL_DESTINO"
 else
-    cat "$EMAIL_TMP" | msmtp "$EMAIL_DESTINO"
+    mime-construct \
+        --to "$EMAIL_DESTINO" \
+        --subject "$ASSUNTO" \
+        --string "$MENSAGEM" | msmtp "$EMAIL_DESTINO"
 fi
-
-rm -f "$EMAIL_TMP"
