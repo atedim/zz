@@ -56,7 +56,7 @@ chmod +x "$caminho_scripts/zz_down"
 chown root:root -R "$caminho_scripts"
 echo "✅ Permissões aplicadas com sucesso."
 
-# Adiciona /etc/scripts ao PATH no .bashrc
+# Adiciona /etc/scripts ao PATH no .bashrc se ainda não estiver
 if ! grep -q "$caminho_scripts" ~/.bashrc; then
   echo "🔧 Adicionando $caminho_scripts ao PATH no .bashrc..."
   echo -e "\n# Adicionado por script de instalação\nexport PATH=\$PATH:$caminho_scripts" >> ~/.bashrc
@@ -65,8 +65,10 @@ else
   echo "ℹ️ Caminho $caminho_scripts já está presente no PATH do .bashrc."
 fi
 
-# Adiciona ao PATH imediatamente na sessão atual
+# Adiciona ao PATH na sessão atual
+echo "🔄 Exportando PATH para sessão atual..."
 export PATH="$PATH:$caminho_scripts"
-echo "✅ Caminho $caminho_scripts adicionado ao PATH atual."
+hash -r
+echo "✅ Caminho $caminho_scripts disponível imediatamente nesta sessão."
 
 echo "🎉 Script finalizado com sucesso!"
