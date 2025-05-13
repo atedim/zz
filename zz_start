@@ -60,4 +60,13 @@ echo "✅ Permissões aplicadas com sucesso."
 if ! grep -q "$caminho_scripts" ~/.bashrc; then
   echo "🔧 Adicionando $caminho_scripts ao PATH no .bashrc..."
   echo -e "\n# Adicionado por script de instalação\nexport PATH=\$PATH:$caminho_scripts" >> ~/.bashrc
-  echo "✅ Caminho adicionado ao PATH no .bashrc
+  echo "✅ Caminho adicionado ao PATH no .bashrc."
+else
+  echo "ℹ️ Caminho $caminho_scripts já está presente no PATH do .bashrc."
+fi
+
+# Adiciona ao PATH imediatamente na sessão atual
+export PATH="$PATH:$caminho_scripts"
+echo "✅ Caminho $caminho_scripts adicionado ao PATH atual."
+
+echo "🎉 Script finalizado com sucesso!"
