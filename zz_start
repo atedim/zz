@@ -51,7 +51,7 @@ echo "✅ zz_down.ini baixado com sucesso."
 
 # Move os arquivos
 echo "📦 Movendo arquivos para $caminho_scripts..."
-mv zz_down zz_down.ini "$caminho_scripts/"
+mv zz_ini zz_down zz_down.ini "$caminho_scripts/"
 echo "✅ Arquivos movidos com sucesso."
 
 # Permissões
