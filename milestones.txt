@@ -25,3 +25,15 @@ base de referencia
 wget -q -O zz_down.ini https://raw.githubusercontent.com/atedim/zz/main/down/zz_down.ini
 
 
+
+
+
+Feito:
+bash <(wget -qO- https://raw.githubusercontent.com/atedim/zz/main/zz_start)   funciona ok
+zz_down baixado e funcionando
+
+
+
+
+TODO:
+fazer preenchimento de zz_down.ini
