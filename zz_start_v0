@@ -1,87 +1,73 @@
 #!/bin/bash
 set -e
 
-# Caminho dos scripts e log
+# Caminho dos scripts
 caminho_scripts="/etc/scripts"
-log_file="$caminho_scripts/logs/install.log"
-
-# Criação inicial das pastas necessárias
-mkdir -p "$caminho_scripts/logs" "$caminho_scripts/bkp_configs"
-
-# Início do log
-exec > >(tee -a "$log_file") 2>&1
-
-# Função de retentativa
-retry() {
-  local tries=$1
-  shift
-  local n=1
-  until "$@"; do
-    if [[ $n -lt $tries ]]; then
-      echo "⚠️ Tentativa $n falhou. Retentando..."
-      ((n++))
-      sleep 2
-    else
-      echo "❌ Comando falhou após $tries tentativas: $*"
-      return 1
-    fi
-  done
-}
 
 # Verifica se é root
 if [[ $EUID -ne 0 ]]; then
   echo "❌ Este script precisa ser executado como root."
   exit 1
 fi
+
 echo "✅ Execução iniciada como root."
 
 # Atualização do sistema
 echo "🔄 Atualizando pacotes..."
-retry 3 apt update -y -qq
-retry 3 apt upgrade -y -qq
+apt update -y && apt upgrade -y
 echo "✅ Sistema atualizado com sucesso."
 
-# Lista de pacotes
+# Lista de pacotes a instalar
 PACOTES="bmon htop rclone rsync sshpass dos2unix mc msmtp msmtp-mta sharutils ntpdate curl bc rcconf cifs-utils samba mergerfs iptraf-ng net-tools gdu etherwake screen mdadm parted mime-construct"
 
-# Instalação de pacotes
+# Instalação dos pacotes
 echo "🔄 Instalando pacotes..."
-retry 3 apt install -y -qq $PACOTES
+apt install -y $PACOTES
 echo "✅ Pacotes instalados com sucesso."
 
-# Sincronização de hora
+# Ajusta data e hora do sistema
 echo "🕒 Sincronizando data/hora com pool.ntp.org..."
-ntpdate pool.ntp.org >/dev/null 2>&1 || echo "⚠️ Falha na sincronização NTP (ignorado)"
+ntpdate pool.ntp.org >/dev/null || echo "⚠️ Falha na sincronização NTP (ignorado)"
+
+# Criação dos diretórios
+echo "📁 Verificando/criando diretórios..."
+mkdir -p "$caminho_scripts" "$caminho_scripts/log" "$caminho_scripts/bkp_configs"
+echo "✅ Diretórios criados/verificados com sucesso."
 
 # Download dos arquivos
 cd /tmp || { echo "❌ Falha ao acessar /tmp"; exit 1; }
 
 echo "⬇️ Baixando zz_ini..."
-retry 3 wget -q -O zz_ini https://raw.githubusercontent.com/atedim/zz/main/ini/zz_ini && echo "✅ zz_ini baixado com sucesso."
+wget -q -O zz_ini https://raw.githubusercontent.com/atedim/zz/main/ini/zz_ini
+echo "✅ zz_ini baixado com sucesso."
 
 echo "⬇️ Baixando zz_down..."
-retry 3 wget -q -O zz_down https://raw.githubusercontent.com/atedim/zz/main/down/zz_down && echo "✅ zz_down baixado com sucesso."
+wget -q -O zz_down https://raw.githubusercontent.com/atedim/zz/main/down/zz_down
+echo "✅ zz_down baixado com sucesso."
 
 echo "⬇️ Baixando zz_down.ini..."
-retry 3 wget -q -O zz_down.ini https://raw.githubusercontent.com/atedim/zz/main/down/zz_down.ini && echo "✅ zz_down.ini baixado com sucesso."
+wget -q -O zz_down.ini https://raw.githubusercontent.com/atedim/zz/main/down/zz_down.ini
+echo "✅ zz_down.ini baixado com sucesso."
 
-# Movendo arquivos
+# Move os arquivos
 echo "📦 Movendo arquivos para $caminho_scripts..."
-mv zz_ini zz_down zz_down.ini "$caminho_scripts/" && echo "✅ Arquivos movidos com sucesso."
+mv zz_ini zz_down zz_down.ini "$caminho_scripts/"
+echo "✅ Arquivos movidos com sucesso."
 
 # Permissões
 echo "🔐 Ajustando permissões..."
-chmod +x "$caminho_scripts/zz_down" "$caminho_scripts/zz_ini"
+chmod +x "$caminho_scripts/zz_down"
+chmod +x "$caminho_scripts/zz_ini"
 chown root:root -R "$caminho_scripts"
 echo "✅ Permissões aplicadas com sucesso."
 
-# Ajuste de CRLF
-echo "📝 Ajustando finalizador de linha..."
-dos2unix "$caminho_scripts/zz_down" >/dev/null 2>&1
-dos2unix "$caminho_scripts/zz_ini"  >/dev/null 2>&1
-echo "✅ Ajustes aplicados com sucesso."
+# Ajuste de CR+LF
+echo "🔐 Ajustando finalizador de linha..."
+dos2unix "$caminho_scripts/zz_down"
+dos2unix "$caminho_scripts/zz_ini"
+echo "✅ ajustes aplicadas com sucesso."
 
-# PATH no .bashrc
+# Adiciona /etc/scripts ao PATH no .bashrc se ainda não estiver
 if ! grep -q "$caminho_scripts" ~/.bashrc; then
   echo "🔧 Adicionando $caminho_scripts ao PATH no .bashrc..."
   echo -e "\n# Adicionado por script de instalação\nexport PATH=\$PATH:$caminho_scripts" >> ~/.bashrc
@@ -90,7 +76,7 @@ else
   echo "ℹ️ Caminho $caminho_scripts já está presente no PATH do .bashrc."
 fi
 
-# Exporta PATH na sessão atual
+# Adiciona ao PATH na sessão atual
 echo "🔄 Exportando PATH para sessão atual..."
 export PATH="$PATH:$caminho_scripts"
 hash -r
