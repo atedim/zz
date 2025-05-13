@@ -1,0 +1,8 @@
+
+
+
+bash <(wget -qO- https://raw.githubusercontent.com/atedim/zz/main/zz_start)
+
+
+
+

@@ -76,4 +76,4 @@ export PATH="$PATH:$caminho_scripts"
 hash -r
 echo "✅ Caminho $caminho_scripts disponível imediatamente nesta sessão."
 
-echo "🎉 Script finalizado com sucesso!"
+echo "🎉 Script finalizado com sucesso! Necessário REBOOT para pleno funcionamento"
