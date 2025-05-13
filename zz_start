@@ -18,7 +18,7 @@ apt update -y && apt upgrade -y
 echo "✅ Sistema atualizado com sucesso."
 
 # Lista de pacotes a instalar
-PACOTES="bmon htop rclone rsync sshpass dos2unix mc msmtp msmtp-mta sharutils ntpdate curl bc rcconf cifs-utils samba mergerfs iptraf net-tools gdu etherwake screen mdadm parted mime-construct"
+PACOTES="bmon htop rclone rsync sshpass dos2unix mc msmtp msmtp-mta sharutils ntpdate curl bc rcconf cifs-utils samba mergerfs iptraf-ng net-tools gdu etherwake screen mdadm parted mime-construct"
 
 # Instalação dos pacotes
 echo "🔄 Instalando pacotes..."
