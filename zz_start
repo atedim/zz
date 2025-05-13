@@ -37,6 +37,10 @@ echo "✅ Diretórios criados/verificados com sucesso."
 # Download dos arquivos
 cd /tmp || { echo "❌ Falha ao acessar /tmp"; exit 1; }
 
+echo "⬇️ Baixando zz_ini..."
+wget -q -O zz_ini https://raw.githubusercontent.com/atedim/zz/main/ini/zz_ini
+echo "✅ zz_ini baixado com sucesso."
+
 echo "⬇️ Baixando zz_down..."
 wget -q -O zz_down https://raw.githubusercontent.com/atedim/zz/main/down/zz_down
 echo "✅ zz_down baixado com sucesso."
@@ -53,6 +57,7 @@ echo "✅ Arquivos movidos com sucesso."
 # Permissões
 echo "🔐 Ajustando permissões..."
 chmod +x "$caminho_scripts/zz_down"
+chmod +x "$caminho_scripts/zz_ini"
 chown root:root -R "$caminho_scripts"
 echo "✅ Permissões aplicadas com sucesso."
 
