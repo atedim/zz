@@ -5,7 +5,7 @@
 DIR_SCRIPTS="/etc/scripts"
 DIR_OLD="$DIR_SCRIPTS/old"
 DIR_LOGS="$DIR_SCRIPTS/zz_down_logs"
-INI="zz_down.ini"
+INI="$DIR_SCRIPTS/zz_down.ini"
 
 [ "$EUID" -ne 0 ] && echo "Este script deve ser executado como root." && exit 1
 ntpdate pool.ntp.org >/dev/null 2>&1
