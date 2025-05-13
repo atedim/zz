@@ -5,7 +5,7 @@ caminho_scripts="/etc/scripts"
 log_dir="$caminho_scripts/logs"
 data_hora=$(date +"%d%m%Y-%H%M")
 log_file="$log_dir/zz_start_$data_hora.log"
-max_retentativas=3  # <- Número de tentativas para comandos críticos
+max_retentativas=3  # Número de tentativas para comandos críticos
 
 # Redireciona stdout e stderr para o log
 mkdir -p "$log_dir"
@@ -19,7 +19,7 @@ fi
 echo "✅ Execução iniciada como root."
 
 # Criação dos diretórios
-echo "ߓ Criando diretórios padrão..."
+echo "📁 Criando diretórios padrão..."
 mkdir -p "$caminho_scripts" "$log_dir" "$caminho_scripts/bkp_configs"
 if [[ $? -ne 0 ]]; then
   echo "❌ Erro ao criar diretórios."
@@ -38,14 +38,14 @@ retry() {
       echo "❌ Falha após $max tentativas: $*"
       return 1
     fi
-    echo "↪️ Tentando novamente ($tentativas/$max)..."
+    echo "🔁 Tentando novamente ($tentativas/$max)..."
     sleep 2
   done
   return 0
 }
 
 # Atualização do sistema
-echo "ߔ Atualizando pacotes..."
+echo "🛠️ Atualizando pacotes..."
 retry apt-get update -y -qq && retry apt-get upgrade -y -qq
 if [[ $? -ne 0 ]]; then
   echo "❌ Falha ao atualizar o sistema."
@@ -58,7 +58,7 @@ fi
 PACOTES="bmon htop rclone rsync sshpass dos2unix mc msmtp msmtp-mta sharutils ntpdate curl bc rcconf cifs-utils samba mergerfs iptraf-ng net-tools gdu etherwake screen mdadm parted mime-construct"
 
 # Instalação de pacotes
-echo "ߔ Instalando pacotes..."
+echo "📦 Instalando pacotes..."
 retry apt-get install -y -qq $PACOTES
 if [[ $? -ne 0 ]]; then
   echo "❌ Falha na instalação dos pacotes."
@@ -68,7 +68,7 @@ else
 fi
 
 # Sincronização de hora
-echo "ߕ Sincronizando data/hora..."
+echo "⏱️ Sincronizando data/hora..."
 ntpdate pool.ntp.org >/dev/null 2>&1 && echo "✅ Hora sincronizada." || echo "⚠️ Falha na sincronização NTP (ignorado)"
 
 # Baixar scripts
@@ -87,24 +87,24 @@ retry wget -q -O zz_down.ini https://raw.githubusercontent.com/atedim/zz/main/do
 echo "✅ zz_down.ini baixado com sucesso."
 
 # Mover arquivos
-echo "ߓ Movendo arquivos para $caminho_scripts..."
+echo "📂 Movendo arquivos para $caminho_scripts..."
 mv zz_ini zz_down zz_down.ini "$caminho_scripts/"
 echo "✅ Arquivos movidos com sucesso."
 
 # Permissões
-echo "ߔ Ajustando permissões..."
+echo "🔒 Ajustando permissões..."
 chmod +x "$caminho_scripts/zz_down" "$caminho_scripts/zz_ini"
 chown root:root -R "$caminho_scripts"
 echo "✅ Permissões aplicadas com sucesso."
 
 # Corrigir finalizadores de linha
-echo "ߔ Corrigindo finalizadores de linha..."
+echo "🧹 Corrigindo finalizadores de linha..."
 dos2unix "$caminho_scripts/zz_down" "$caminho_scripts/zz_ini" >/dev/null 2>&1
 echo "✅ Correções aplicadas."
 
 # PATH no .bashrc
 if ! grep -q "$caminho_scripts" ~/.bashrc; then
-  echo "ߔ Adicionando $caminho_scripts ao PATH..."
+  echo "➕ Adicionando $caminho_scripts ao PATH..."
   echo -e "\n# Adicionado por script de instalação\nexport PATH=\$PATH:$caminho_scripts" >> ~/.bashrc
   echo "✅ Caminho adicionado ao PATH no .bashrc."
 else
@@ -112,10 +112,10 @@ else
 fi
 
 # Exporta PATH para sessão atual
-echo "ߔ Exportando PATH para sessão atual..."
+echo "🔄 Exportando PATH para sessão atual..."
 export PATH="$PATH:$caminho_scripts"
 hash -r
 echo "✅ Caminho disponível nesta sessão."
 
-echo "📄 Log completo salvo em: $log_file"
-echo "ߎ Script finalizado com sucesso! REINICIE o sistema para aplicar completamente !"
+echo "📝 Log completo salvo em: $log_file"
+echo "✅ Script finalizado com sucesso! 🔁 REINICIE o sistema para aplicar completamente."
