@@ -37,8 +37,8 @@ echo "✅ Execução iniciada como root."
 
 # Atualização do sistema
 echo "🔄 Atualizando pacotes..."
-retry 3 apt update -y -qq
-retry 3 apt upgrade -y -qq
+retry 3 apt-get  update -y -qq
+retry 3 apt-get  upgrade -y -qq
 echo "✅ Sistema atualizado com sucesso."
 
 # Lista de pacotes
@@ -46,7 +46,7 @@ PACOTES="bmon htop rclone rsync sshpass dos2unix mc msmtp msmtp-mta sharutils nt
 
 # Instalação de pacotes
 echo "🔄 Instalando pacotes..."
-retry 3 apt install -y -qq $PACOTES
+retry 3 apt-get  install -y -qq $PACOTES
 echo "✅ Pacotes instalados com sucesso."
 
 # Sincronização de hora
