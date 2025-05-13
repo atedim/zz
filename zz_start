@@ -61,6 +61,12 @@ chmod +x "$caminho_scripts/zz_ini"
 chown root:root -R "$caminho_scripts"
 echo "✅ Permissões aplicadas com sucesso."
 
+# Ajuste de CR+LF
+echo "🔐 Ajustando finalizador de linha..."
+dos2unix "$caminho_scripts/zz_down"
+dos2unix "$caminho_scripts/zz_ini"
+echo "✅ ajustes aplicadas com sucesso."
+
 # Adiciona /etc/scripts ao PATH no .bashrc se ainda não estiver
 if ! grep -q "$caminho_scripts" ~/.bashrc; then
   echo "🔧 Adicionando $caminho_scripts ao PATH no .bashrc..."
