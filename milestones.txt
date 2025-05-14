@@ -1,10 +1,4 @@
-
-
 bash <(wget -qO- https://raw.githubusercontent.com/atedim/zz/main/zz_start)
-
-
-
-
 
 
 Validar zz_bkpcfg
@@ -37,3 +31,4 @@ zz_down baixado e funcionando
 
 TODO:
 fazer preenchimento de zz_down.ini
+colocar pra perguntar se quer fazer teste no zz_mail e pedir dados para fazer envio
