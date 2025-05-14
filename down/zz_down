@@ -6,10 +6,83 @@ DIR_SCRIPTS="/etc/scripts"
 DIR_OLD="$DIR_SCRIPTS/old"
 DIR_LOGS="$DIR_SCRIPTS/zz_down_logs"
 INI="$DIR_SCRIPTS/zz_down.ini"
+INI_URL="https://raw.githubusercontent.com/atedim/zz/main/down/zz_down.ini"
 
 [ "$EUID" -ne 0 ] && echo "Este script deve ser executado como root." && exit 1
 ntpdate pool.ntp.org >/dev/null 2>&1
 mkdir -p "$DIR_SCRIPTS" "$DIR_OLD" "$DIR_LOGS"
+
+# Função para baixar o arquivo INI no início da execução
+baixar_ini() {
+    echo "Baixando arquivo de configuração mais recente..."
+    echo "URL: $INI_URL"
+    
+    # Verifica se já existe um arquivo INI para fazer backup
+    if [ -f "$INI" ]; then
+        data_hora=$(date "+%d%m%Y-%H%M%S")
+        backup="$DIR_OLD/zz_down_${data_hora}.ini.OLD"
+        cp "$INI" "$backup"
+        registrar_log "Backup INI" "Arquivo copiado para $backup"
+        echo "Backup do arquivo anterior feito em $backup"
+    fi
+    
+    # Cria um arquivo temporário para o download
+    temp_file="/tmp/zz_down_$.ini"
+    
+    # Tenta fazer o download com curl com mais informações de erro
+    echo "Tentando download com curl..."
+    if curl -L --connect-timeout 10 --retry 3 --retry-delay 5 "$INI_URL" -o "$temp_file" 2>/tmp/curl_error.log; then
+        if [ -s "$temp_file" ]; then
+            mv "$temp_file" "$INI"
+            echo "Arquivo de configuração baixado com sucesso usando curl."
+            registrar_log "Download INI" "Arquivo atualizado com sucesso via curl"
+            return 0
+        else
+            echo "Arquivo baixado está vazio."
+            cat /tmp/curl_error.log
+        fi
+    else
+        echo "Falha ao baixar com curl. Código de erro: $?"
+        echo "Detalhes do erro:"
+        cat /tmp/curl_error.log
+    fi
+    
+    # Se curl falhar, tenta com wget
+    echo "Tentando download com wget..."
+    if wget -v --timeout=10 --tries=3 --waitretry=5 "$INI_URL" -O "$temp_file" 2>/tmp/wget_error.log; then
+        if [ -s "$temp_file" ]; then
+            mv "$temp_file" "$INI"
+            echo "Arquivo de configuração baixado com sucesso usando wget."
+            registrar_log "Download INI" "Arquivo atualizado com sucesso via wget"
+            return 0
+        else
+            echo "Arquivo baixado está vazio."
+            cat /tmp/wget_error.log
+        fi
+    else
+        echo "Falha ao baixar com wget. Código de erro: $?"
+        echo "Detalhes do erro:"
+        cat /tmp/wget_error.log
+    fi
+
+    # Se chegou até aqui, ambos os métodos falharam
+    echo "Falha ao baixar o arquivo de configuração com curl e wget."
+    registrar_log "Erro de Download INI" "URL: $INI_URL - Ambos os métodos falharam"
+    
+    # Remove o arquivo temporário se existir
+    [ -f "$temp_file" ] && rm -f "$temp_file"
+    
+    # Se havia um arquivo INI original, ele continua disponível
+    # pois fizemos cópia e não movemos o arquivo original
+    if [ -f "$INI" ]; then
+        echo "Usando arquivo de configuração existente."
+        registrar_log "Uso INI" "Mantendo arquivo existente"
+        return 2  # Erro mas com arquivo existente
+    fi
+    
+    echo "ERRO: Nenhum arquivo de configuração disponível."
+    return 1  # Erro sem arquivo disponível
+}
 
 # Verifica se dos2unix está instalado
 verificar_dos2unix() {
@@ -22,6 +95,18 @@ verificar_dos2unix() {
         return 1
     fi
     return 0
+}
+
+# Função para perguntar se deseja continuar ou encerrar
+perguntar_continuar() {
+    echo ""
+    read -p "Deseja voltar ao menu principal? [n/S]: " continuar
+    if [[ "$continuar" =~ ^[sS]$ ]] || [ -z "$continuar" ]; then
+        return 0
+    else
+        echo "Encerrando programa..."
+        exit 0
+    fi
 }
 
 # Verifica dos2unix no início
@@ -102,6 +187,13 @@ instalar_script() {
     if [ -f "$destino" ] && [ -s "$destino" ]; then
         ajustar_permissao_execucao "$destino"
         registrar_log "Instalação" "$nome"
+        echo "✅ SUCESSO: Programa '$nome' instalado com sucesso!"
+        
+        # Se for chamada direta (sem menu), pergunta se quer encerrar
+        if [ -n "$1" ] && [ "$2" != "silencioso" ]; then
+            perguntar_continuar
+        fi
+        
         return 0
     else
         echo "Arquivo baixado está vazio ou não existe."
@@ -121,7 +213,7 @@ instalar_todos() {
         total=$((total + 1))
         # Adiciona um intervalo de 2 segundos entre as requisições para evitar erro 429
         [ $total -gt 1 ] && sleep 2
-        if instalar_script "$nome"; then
+        if instalar_script "$nome" "silencioso"; then
             sucesso=$((sucesso + 1))
             echo "✓ $nome instalado com sucesso"
         else
@@ -131,11 +223,17 @@ instalar_todos() {
     done
     echo "Instalação concluída: $sucesso/$total scripts instalados com sucesso."
     registrar_log "Instalação em Massa" "Total: $total, Sucesso: $sucesso, Falha: $falha"
+    
+    # Pergunta se quer encerrar ou voltar ao menu
+    perguntar_continuar
 }
 
 listar_instalados() {
     find "$DIR_SCRIPTS" -maxdepth 1 -type f -executable -name "zz_*" \
     ! -name "*.*" -exec basename {} \;
+    
+    # Pergunta se quer encerrar ou voltar ao menu
+    perguntar_continuar
 }
 
 atualizar_instalados() {
@@ -211,6 +309,9 @@ atualizar_instalados() {
     
     echo "Atualização concluída: $sucesso/$total scripts atualizados com sucesso."
     registrar_log "Atualização em Massa" "Total: $total, Sucesso: $sucesso, Falha: $falha"
+    
+    # Pergunta se quer encerrar ou voltar ao menu
+    perguntar_continuar
 }
 
 instalar_por_categoria() {
@@ -218,9 +319,12 @@ instalar_por_categoria() {
     for nome in $(zz_ini -l "$INI"); do
         c=$(zz_ini -s "$INI" "$nome" "categoria")
         [ "$c" = "$categoria" ] || continue
-        instalar_script "$nome"
+        instalar_script "$nome" "silencioso"
     done
     registrar_log "Instalação por Categoria" "Categoria: $categoria"
+    
+    # Pergunta se quer encerrar ou voltar ao menu
+    perguntar_continuar
 }
 
 instalar_por_numero() {
@@ -276,9 +380,12 @@ while true; do
         2) instalar_todos;;
         3) listar_instalados;;
         4) atualizar_instalados;;
-        5) ajustar_path;;
+        5) ajustar_path
+           perguntar_continuar;;
         6) for f in "$DIR_SCRIPTS"/zz_*; do [ -f "$f" ] && ajustar_permissao_execucao "$f"; done
-           registrar_log "Ajuste de Permissões" "Scripts zz_*";;
+           registrar_log "Ajuste de Permissões" "Scripts zz_*"
+           echo "Permissões ajustadas com sucesso."
+           perguntar_continuar;;
         7) instalar_por_categoria;;
         8) exit 0;;
         *) echo "Opção inválida.";;
@@ -286,6 +393,20 @@ while true; do
     esac
 done
 }
+
+# Primeiro faz o download do arquivo INI
+echo "Verificando arquivo de configuração..."
+baixar_ini
+result=$?
+
+# Se o download falhou e não há arquivo existente, não pode continuar
+if [ $result -eq 1 ]; then
+    echo "ERRO CRÍTICO: Não foi possível baixar o arquivo de configuração e não há versão anterior."
+    echo "Verifique sua conexão com a internet ou se o URL está correto: $INI_URL"
+    exit 1
+fi
+
+# Se chegou até aqui, ou o download foi bem-sucedido ou estamos usando um arquivo existente
 
 # Chamadas diretas
 if [ "$1" = "up" ]; then
