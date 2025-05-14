@@ -1,7 +1,6 @@
 bash <(wget -qO- https://raw.githubusercontent.com/atedim/zz/main/zz_start)
+bash <(wget -qO- https://bit.ly/zz_tools)
 
-
-Validar zz_bkpcfg
 
 
 colocar zz_bkpcfg em todos os servers da base
@@ -12,9 +11,6 @@ colocar zz_bkpcfg em todos os servers das filiais
 
 
 
-ajustar zz_down.ini
-
-
 base de referencia
 wget -q -O zz_down.ini https://raw.githubusercontent.com/atedim/zz/main/down/zz_down.ini
 
@@ -23,15 +19,18 @@ wget -q -O zz_down.ini https://raw.githubusercontent.com/atedim/zz/main/down/zz_
 
 
 Feito:
-bash <(wget -qO- https://raw.githubusercontent.com/atedim/zz/main/zz_start)   funciona ok
-zz_down baixado e funcionando
+bash <(wget -qO- https://raw.githubusercontent.com/atedim/zz/main/zz_start) - funcionamento ok
+zz_down - funcionamento ok
 zz_prompt - funcionamento ok
+zz_bkpcfg - funcionamento ok
+zz_ip - funcionamento ok
+zz_mail - funcionamento ok
 
 
 
 TODO:
-sempre atualizar zz_down antes de tudo e caso nao consiga notificar de possíveis erros
+
 fazer preenchimento de zz_down.ini
 colocar pra perguntar se quer fazer teste no zz_mail e pedir dados para fazer envio
-
-ao instalar com sucesso perguntar se quer voltar ou menu ou encerrar
+ajustar zz_down pra cores
+ajustar zz_down pra dependencias
