@@ -9,10 +9,10 @@ notifica="sim"
 ARQUIVO_HOSTS="/etc/scripts/zz_mon_hosts.txt"
 NUM_TENTATIVAS=3
 INTERVALO=2
-ARQUIVO_SAIDA="/etc/scripts/zz_mon_result.txt"
+ARQUIVO_SAIDA="/etc/scripts/log/zz_mon_result.txt"
 PERCENTUAL_FALHA_CRITICO=70
 ARQUIVO_LOG_MUDANCA="zz_mon_disp.log"
-DIRETORIO_ESTADOS="./estados"
+DIRETORIO_ESTADOS="/etc/scripts/log/estados"
 MODO_SILENCIOSO=0
 
 # Verifica argumentos

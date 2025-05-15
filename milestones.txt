@@ -7,14 +7,8 @@ colocar zz_bkpcfg em todos os servers da base
 colocar zz_bkpcfg em todos os servers das filiais
 
 
-
-
-
-
 base de referencia
 wget -q -O zz_down.ini https://raw.githubusercontent.com/atedim/zz/main/down/zz_down.ini
-
-
 
 
 
