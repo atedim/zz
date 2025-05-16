@@ -27,4 +27,15 @@ TODO:
 fazer preenchimento de zz_down.ini
 colocar pra perguntar se quer fazer teste no zz_mail e pedir dados para fazer envio
 ajustar zz_down pra cores
-ajustar zz_down pra dependencias
+ajustar zz_down pra dependências
+
+
+
+
+
+
+adicionar compact e compactv2
+adicionar killswitch
+adicionar zz_banner
+adicionar 
+
