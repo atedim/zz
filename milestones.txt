@@ -39,3 +39,53 @@ adicionar killswitch
 adicionar zz_banner
 adicionar 
 
+
+
+
+
+
+
+set from=tigrupoalbatroz@gmail.com
+set password=mrjcvgnnppszotwi
+
+
+
+
+
+
+
+Todas as maquinas devem ter
+
+/etc/scripts
+/etc/scripts/log
+/etc/scripts/bkp_configs
+
+
+Todos os logs devem ter o nome ZZ_nomeprog_DDMMAAAA.log
+
+
+
+colocar zz_bkpconfig em todos os servidores
+
+enviar emails para 
+system@grupoalbatroz.com.br
+
+
+
+zz_sys
+
+
+fazer um "help" no inicio do script documentando as funções, usos e variáveis de configuração
+ajustar log para colocar hora inicio e hora fim do teste, sendo isso um header e um trailer do arquivo
+colocar opção silent
+colocar opção mail ( com anexo)
+guardar  logs e manter só x dias
+criar a opção -nodel para nao apagar os logs
+
+
+
+
+percentual corrigido
+colocar opção para output em /etc/scripts/logs e colocar variavel para nomear o log sendo o nome zz_sys_ddmmaaaa.log fazer as verificações de se pasta existe, caso nao exista para criar
+
+
