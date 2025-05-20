@@ -1,22 +1,62 @@
 #!/bin/bash
 
-# Caminhos das pastas (edite aqui ou use como parâmetros)
-PASTA1="/dados"
-PASTA2="/dr"
+########################################################################
+# zz_dif_tam.sh - Comparador de diferença de tamanho e quantidade de arquivos
+#
+# Uso:
+#   ./zz_dif_tam.sh <origem> <destino> [silent]
+#
+# Descrição:
+#   Compara duas pastas em termos de:
+#     - Tamanho total de arquivos (em bytes)
+#     - Quantidade total de arquivos
+#
+# Parâmetros:
+#   origem   → Caminho da pasta de origem a ser comparada
+#   destino  → Caminho da pasta de referência
+#   silent   → (opcional) se passado, não exibe saída detalhada.
+#              Apenas escreve "OK", "WARNING" ou "ERROR" em /etc/logs/zz_dif_tam
+#
+# Saída:
+#   - Saída detalhada com classificação se não for modo silent.
+#   - Saída simplificada + log em /etc/logs/zz_dif_tam se modo silent.
+########################################################################
+
+# Verifica número de argumentos
+if [ "$#" -lt 2 ]; then
+  echo "Uso: $0 <pasta_origem> <pasta_destino> [silent]"
+  exit 1
+fi
+
+# Argumentos
+PASTA1="$1"
+PASTA2="$2"
+SILENT="nao"
+[ "$3" = "silent" ] && SILENT="sim"
 
 # Verifica se as pastas existem
-[ ! -d "$PASTA1" ] && echo "Erro: PASTA1 não existe: $PASTA1" && exit 1
-[ ! -d "$PASTA2" ] && echo "Erro: PASTA2 não existe: $PASTA2" && exit 1
+[ ! -d "$PASTA1" ] && echo "Erro: Pasta de origem não existe: $PASTA1" && exit 1
+[ ! -d "$PASTA2" ] && echo "Erro: Pasta de destino não existe: $PASTA2" && exit 1
 
-# Obtém tamanho total em bytes
-TAMANHO1=$(du -sb "$PASTA1" | awk '{print $1}')
-TAMANHO2=$(du -sb "$PASTA2" | awk '{print $1}')
+# Detecta comando fdfind/fd
+if command -v fdfind > /dev/null; then
+  FD_CMD="fdfind"
+elif command -v fd > /dev/null; then
+  FD_CMD="fd"
+else
+  echo "Erro: Nenhum dos comandos 'fdfind' ou 'fd' está disponível. Instale um deles."
+  exit 1
+fi
+
+# Obtém tamanhos (em bytes) somando arquivos diretamente
+TAMANHO1=$($FD_CMD -t f . "$PASTA1" -x stat --format="%s" | awk '{s+=$1} END {print s}')
+TAMANHO2=$($FD_CMD -t f . "$PASTA2" -x stat --format="%s" | awk '{s+=$1} END {print s}')
 
 # Obtém número de arquivos
-ARQS1=$(find "$PASTA1" -type f | wc -l)
-ARQS2=$(find "$PASTA2" -type f | wc -l)
+ARQS1=$($FD_CMD -t f . "$PASTA1" | wc -l)
+ARQS2=$($FD_CMD -t f . "$PASTA2" | wc -l)
 
-# Função para calcular porcentagem
+# Função para calcular percentual de diferença
 calc_diff_percent() {
   menor=$1
   maior=$2
@@ -29,36 +69,53 @@ calc_diff_percent() {
   fi
 }
 
-# Calcula diferenças em porcentagem
+# Cálculo das diferenças
 PERC_TAM=$(calc_diff_percent "$TAMANHO1" "$TAMANHO2")
 PERC_ARQ=$(calc_diff_percent "$ARQS1" "$ARQS2")
 
-# Função para classificar diferença
+# Em modo silent: grava apenas status em /etc/logs/zz_dif_tam
+if [ "$SILENT" = "sim" ]; then
+  LOGFILE="/etc/logs/zz_dif_tam"
+  mkdir -p "$(dirname "$LOGFILE")"
+
+  if [ "$PERC_TAM" -le 10 ] && [ "$PERC_ARQ" -le 10 ]; then
+    echo "OK" > "$LOGFILE"
+    exit 0
+  elif [ "$PERC_TAM" -le 30 ] && [ "$PERC_ARQ" -le 30 ]; then
+    echo "WARNING" > "$LOGFILE"
+    exit 0
+  else
+    echo "ERROR" > "$LOGFILE"
+    exit 1
+  fi
+fi
+
+# Modo verbose (detalhado)
 classificar() {
   local tipo=$1
   local perc=$2
 
-  if [ "$perc" -lt 10 ]; then
-    echo "$tipo: Diferença < 10% (Nível 1)"
-  elif [ "$perc" -lt 30 ]; then
-    echo "$tipo: Diferença < 30% (Nível 2)"
-  elif [ "$perc" -lt 50 ]; then
-    echo "$tipo: Diferença < 50% (Nível 3)"
+  if [ "$perc" -le 10 ]; then
+    echo "$tipo: Diferença ≤ 10% (Nível 1)"
+  elif [ "$perc" -le 30 ]; then
+    echo "$tipo: Diferença ≤ 30% (Nível 2)"
+  elif [ "$perc" -le 50 ]; then
+    echo "$tipo: Diferença ≤ 50% (Nível 3)"
   else
-    echo "$tipo: Diferença ≥ 50% (Fora do limite)"
+    echo "$tipo: Diferença > 50% (Fora do limite)"
   fi
 }
 
-# Exibe resultados
-echo "Comparando: $PASTA1 (menor?) com $PASTA2 (referência)"
+# Saída detalhada
+echo "Comparando: $PASTA1 (origem) com $PASTA2 (referência)"
 echo
 echo "Tamanho:"
-echo "  PASTA1: $TAMANHO1 bytes"
-echo "  PASTA2: $TAMANHO2 bytes"
+echo "  $PASTA1: $TAMANHO1 bytes"
+echo "  $PASTA2: $TAMANHO2 bytes"
 classificar "Tamanho" "$PERC_TAM"
 
 echo
 echo "Quantidade de Arquivos:"
-echo "  PASTA1: $ARQS1 arquivos"
-echo "  PASTA2: $ARQS2 arquivos"
+echo "  $PASTA1: $ARQS1 arquivos"
+echo "  $PASTA2: $ARQS2 arquivos"
 classificar "Arquivos" "$PERC_ARQ"
