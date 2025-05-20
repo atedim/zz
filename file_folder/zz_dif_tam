@@ -1,100 +1,59 @@
 #!/bin/bash
-
-########################################################################
-# zz_dif_tam.sh - Comparador de diferença de tamanho e quantidade de arquivos
+#
+# zz_dif_tam - Compara duas pastas em termos de tamanho total (bytes) e número de arquivos.
 #
 # Uso:
-#   ./zz_dif_tam.sh <origem> <destino> [silent]
-#
-# Descrição:
-#   Compara duas pastas em termos de:
-#     - Tamanho total de arquivos (em bytes)
-#     - Quantidade total de arquivos
+#   zz_dif_tam [origem] [destino] [silent]
 #
 # Parâmetros:
-#   origem   → Caminho da pasta de origem a ser comparada
-#   destino  → Caminho da pasta de referência
-#   silent   → (opcional) se passado, não exibe saída detalhada.
-#              Apenas escreve "OK", "WARNING" ou "ERROR" em /etc/logs/zz_dif_tam
+#   origem   - Caminho da pasta origem
+#   destino  - Caminho da pasta destino (referência)
+#   silent   - (opcional) Se informado, exibe apenas OK, WARNING ou ERROR e grava em /etc/logs/zz_dif_tam
 #
-# Saída:
-#   - Saída detalhada com classificação se não for modo silent.
-#   - Saída simplificada + log em /etc/logs/zz_dif_tam se modo silent.
-########################################################################
+# Dependências: du, fdfind (fd), wc
+#
 
-# Verifica número de argumentos
-if [ "$#" -lt 2 ]; then
-  echo "Uso: $0 <pasta_origem> <pasta_destino> [silent]"
-  exit 1
-fi
+# Verificação de dependências
+command -v du >/dev/null || { echo "Erro: 'du' não encontrado"; exit 1; }
+command -v fdfind >/dev/null || { echo "Erro: 'fdfind' (fd) não encontrado"; exit 1; }
 
-# Argumentos
+# Diretórios
 PASTA1="$1"
 PASTA2="$2"
-SILENT="nao"
-[ "$3" = "silent" ] && SILENT="sim"
+MODO="$3"
+LOGFILE="/etc/scripts/logs/zz_dif_tam.log"
 
-# Verifica se as pastas existem
-[ ! -d "$PASTA1" ] && echo "Erro: Pasta de origem não existe: $PASTA1" && exit 1
-[ ! -d "$PASTA2" ] && echo "Erro: Pasta de destino não existe: $PASTA2" && exit 1
+[ -z "$PASTA1" ] && echo "Erro: informe a pasta origem" && exit 1
+[ -z "$PASTA2" ] && echo "Erro: informe a pasta destino" && exit 1
 
-# Detecta comando fdfind/fd
-if command -v fdfind > /dev/null; then
-  FD_CMD="fdfind"
-elif command -v fd > /dev/null; then
-  FD_CMD="fd"
-else
-  echo "Erro: Nenhum dos comandos 'fdfind' ou 'fd' está disponível. Instale um deles."
-  exit 1
-fi
+[ ! -d "$PASTA1" ] && echo "Erro: Pasta origem não existe: $PASTA1" && exit 1
+[ ! -d "$PASTA2" ] && echo "Erro: Pasta destino não existe: $PASTA2" && exit 1
 
-# Obtém tamanhos (em bytes) somando arquivos diretamente
-TAMANHO1=$($FD_CMD -t f . "$PASTA1" -x stat --format="%s" | awk '{s+=$1} END {print s}')
-TAMANHO2=$($FD_CMD -t f . "$PASTA2" -x stat --format="%s" | awk '{s+=$1} END {print s}')
+# Função rápida para obter tamanho total em bytes
+obter_tamanho() {
+  du -sb "$1" | awk '{print $1}'
+}
 
-# Obtém número de arquivos
-ARQS1=$($FD_CMD -t f . "$PASTA1" | wc -l)
-ARQS2=$($FD_CMD -t f . "$PASTA2" | wc -l)
+# Função rápida para contar arquivos com fdfind
+contar_arquivos() {
+  fdfind -t f . "$1" 2>/dev/null | wc -l
+}
 
-# Função para calcular percentual de diferença
+# Função para calcular diferença percentual
 calc_diff_percent() {
-  menor=$1
-  maior=$2
+  local menor="$1"
+  local maior="$2"
   if [ "$maior" -eq 0 ]; then
     echo 0
   else
-    diff=$((maior - menor))
-    percent=$((100 * diff / maior))
-    echo "$percent"
+    echo $(( (maior - menor) * 100 / maior ))
   fi
 }
 
-# Cálculo das diferenças
-PERC_TAM=$(calc_diff_percent "$TAMANHO1" "$TAMANHO2")
-PERC_ARQ=$(calc_diff_percent "$ARQS1" "$ARQS2")
-
-# Em modo silent: grava apenas status em /etc/logs/zz_dif_tam
-if [ "$SILENT" = "sim" ]; then
-  LOGFILE="/etc/logs/zz_dif_tam"
-  mkdir -p "$(dirname "$LOGFILE")"
-
-  if [ "$PERC_TAM" -le 10 ] && [ "$PERC_ARQ" -le 10 ]; then
-    echo "OK" > "$LOGFILE"
-    exit 0
-  elif [ "$PERC_TAM" -le 30 ] && [ "$PERC_ARQ" -le 30 ]; then
-    echo "WARNING" > "$LOGFILE"
-    exit 0
-  else
-    echo "ERROR" > "$LOGFILE"
-    exit 1
-  fi
-fi
-
-# Modo verbose (detalhado)
+# Função para classificar
 classificar() {
-  local tipo=$1
-  local perc=$2
-
+  local tipo="$1"
+  local perc="$2"
   if [ "$perc" -le 10 ]; then
     echo "$tipo: Diferença ≤ 10% (Nível 1)"
   elif [ "$perc" -le 30 ]; then
@@ -106,8 +65,31 @@ classificar() {
   fi
 }
 
-# Saída detalhada
-echo "Comparando: $PASTA1 (origem) com $PASTA2 (referência)"
+# Coleta dados
+TAMANHO1=$(obter_tamanho "$PASTA1")
+TAMANHO2=$(obter_tamanho "$PASTA2")
+
+ARQS1=$(contar_arquivos "$PASTA1")
+ARQS2=$(contar_arquivos "$PASTA2")
+
+PERC_TAM=$(calc_diff_percent "$TAMANHO1" "$TAMANHO2")
+PERC_ARQ=$(calc_diff_percent "$ARQS1" "$ARQS2")
+
+# SILENT MODE
+if [ "$MODO" = "silent" ]; then
+  STATUS="OK"
+  [ "$PERC_TAM" -gt 10 ] && STATUS="WARNING"
+  [ "$PERC_TAM" -gt 30 ] && STATUS="WARNING"
+  [ "$PERC_TAM" -gt 50 ] && STATUS="ERROR"
+
+  echo "$STATUS"
+  mkdir -p "$(dirname "$LOGFILE")"
+  echo "$STATUS" > "$LOGFILE"
+  exit 0
+fi
+
+# Modo normal
+echo "Comparando: $PASTA1 (origem) com $PASTA2 (destino)"
 echo
 echo "Tamanho:"
 echo "  $PASTA1: $TAMANHO1 bytes"
