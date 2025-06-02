@@ -1,0 +1,92 @@
+#!/bin/bash
+
+# Função para executar cada opção de sincronia
+executa_opcao() {
+    case "$1" in
+        anuais)
+            echo "Sincronizando Backups Anuais"
+            zz_sync anuais_origem anuais_destino
+            ;;
+        srv30)
+            echo "Sincronizando Servidor 30 (Ribeirao)"
+            zz_sync filiais_30_origem filiais_30_destino
+            ;;
+        srv40)
+            echo "Sincronizando Servidor 40 (Campinas)"
+            zz_sync filiais_40_origem filiais_40_destino
+            ;;
+        srv70)
+            echo "Sincronizando Servidor 70 (BH)"
+            zz_sync filiais_70_origem filiais_70_destino
+            ;;
+        srvGRU)
+            echo "Sincronizando Servidor GRU"
+            zz_sync filiais_gru_origem filiais_gru_destino
+            ;;
+        srvHK5)
+            echo "Sincronizando Servidor 5 (HK)"
+            zz_sync hk5-origem hk5-destino
+            ;;
+        srvSMB8)
+            echo "Sincronizando Servidor 8 (SMB)"
+            zz_sync smb8-origem smb8-destino
+            ;;
+        srvNXAVIER)
+            echo "Sincronizando Servidor Xavier novo (SMB)"
+            zz_sync smb8-origem nxavier
+            ;;
+        *)
+            echo "Opção desconhecida: $1"
+            ;;
+    esac
+}
+
+# Lista de todas as opções
+TODAS_OPCOES="anuais srv30 srv40 srv70 srvGRU srvHK5 srvSMB8 srvNXAVIER"
+
+# Verifica se o parâmetro -all foi passado
+if [ "$1" == "-all" ]; then
+    SELECIONADAS="$TODAS_OPCOES"
+else
+    # Menu interativo com checkboxes via whiptail
+    SELECIONADAS=$(whiptail --title "Sincronização de Backups" --checklist \
+    "Selecione as tarefas de sincronização desejadas:" 22 80 12 \
+    "anuais"     "Backups Anuais" ON \
+    "srv30"      "Servidor 30 (Ribeirao)" OFF \
+    "srv40"      "Servidor 40 (Campinas)" OFF \
+    "srv70"      "Servidor 70 (BH)" OFF \
+    "srvGRU"     "Servidor GRU" OFF \
+    "srvHK5"     "Servidor 5 (HK)" OFF \
+    "srvSMB8"    "Servidor 8 (SMB)" OFF \
+    "srvNXAVIER" "Servidor Xavier novo (SMB)" OFF \
+    3>&1 1>&2 2>&3)
+
+    # Verifica se foi cancelado
+    if [ $? -ne 0 ]; then
+        echo "Operação cancelada."
+        exit 1
+    fi
+
+    # Remove aspas das opções selecionadas
+    SELECIONADAS=$(echo $SELECIONADAS | sed 's/"//g')
+fi
+
+# Limpa tela e exibe início
+clear
+inicio=$(date "+%d/%m/%Y -- %H:%M:%S")
+echo "Início do processo: $inicio"
+echo
+
+# Executa cada tarefa selecionada
+for opcao in $SELECIONADAS; do
+    echo "----------------------------"
+    date "+%d/%m/%Y -- %H:%M:%S"
+    executa_opcao "$opcao"
+    date "+%d/%m/%Y -- %H:%M:%S"
+    echo "----------------------------"
+    sleep 2
+done
+
+echo
+echo "Término do processo: $(date "+%d/%m/%Y -- %H:%M:%S")"
+echo

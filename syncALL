@@ -1,0 +1,82 @@
+#!/bin/bash
+clear
+inicio=$(date "+%d/%m/%Y -- %H:%M:%S")
+
+echo
+echo "Inicio da Sincronia de Backups Anuais"
+date "+%d/%m/%Y -- %H:%M:%S"
+zz_sync anuais_origem anuais_destino
+echo "Fim da Sincronia de Backups Anuais"
+date "+%d/%m/%Y -- %H:%M:%S"
+sleep 5
+echo 
+
+echo
+echo "Inicio da Sincronia do Servidor 30 (Ribeirao)"
+date "+%d/%m/%Y -- %H:%M:%S"
+zz_sync filiais_30_origem filiais_30_destino
+echo "Fim da Sincronia do Servidor 30 (Ribeirao)"
+date "+%d/%m/%Y -- %H:%M:%S"
+sleep 5
+echo 
+
+echo
+echo "Inicio da Sincronia do Servidor 40 (Campinas)"
+date "+%d/%m/%Y -- %H:%M:%S"
+zz_sync filiais_40_origem  filiais_40_destino
+echo "Fim da Sincronia do Servidor 40 (Campinas)"
+date "+%d/%m/%Y -- %H:%M:%S"
+sleep 5
+echo
+
+echo
+echo "Inicio da Sincronia do Servidor 70 (BH)"
+date "+%d/%m/%Y -- %H:%M:%S"
+zz_sync filiais_70_origem filiais_70_destino
+echo "Fim da Sincronia do Servidor 70 (BH)"
+date "+%d/%m/%Y -- %H:%M:%S"
+sleep 5
+echo
+
+echo
+echo "Inicio da Sincronia do Servidor GRU"
+date "+%d/%m/%Y -- %H:%M:%S"
+zz_sync filiais_gru_origem filiais_gru_destino
+echo "Fim da Sincronia do Servidor GRU"
+date "+%d/%m/%Y -- %H:%M:%S"
+sleep 5
+echo
+
+echo
+echo "Inicio da Sincronia do Servidor 5 (HK)"
+date "+%d/%m/%Y -- %H:%M:%S"
+zz_sync hk5-origem hk5-destino
+echo "Fim da Sincronia do Servidor 5 (HK)"
+date "+%d/%m/%Y -- %H:%M:%S"
+sleep 5
+echo
+
+echo
+echo "Inicio da Sincronia do Servidor 8 (SMB)"
+date "+%d/%m/%Y -- %H:%M:%S"
+zz_sync smb8-origem smb8-destino
+echo "Fim da Sincronia do Servidor 8 (SMB)"
+date "+%d/%m/%Y -- %H:%M:%S"
+sleep 5
+echo
+
+echo
+echo "Inicio da Sincronia do Servidor Xavier novo (SMB)"
+date "+%d/%m/%Y -- %H:%M:%S"
+zz_sync smb8-origem nxavier
+echo "Fim da Sincronia do Servidor Xavier novo (SMB)"
+date "+%d/%m/%Y -- %H:%M:%S"
+sleep 5
+echo
+
+echo
+echo "Inicio do Processo Geral"
+echo $inicio
+echo "Fim do Processo Geral"
+date "+%d/%m/%Y -- %H:%M:%S"
+echo
