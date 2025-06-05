@@ -41,17 +41,18 @@ executa_opcao() {
     esac
 }
 
-# Lista de todas as opções
+# Lista de todas as opções (exceto "all")
 TODAS_OPCOES="anuais srv30 srv40 srv70 srvGRU srvHK5 srvSMB8 srvNXAVIER"
 
-# Verifica se o parâmetro -all foi passado
+# Se o parâmetro for -all, pula menu e executa tudo
 if [ "$1" == "-all" ]; then
     SELECIONADAS="$TODAS_OPCOES"
 else
-    # Menu interativo com checkboxes via whiptail
+    # Menu interativo com "all" como primeiro e ON por padrão
     SELECIONADAS=$(whiptail --title "Sincronização de Backups" --checklist \
     "Selecione as tarefas de sincronização desejadas:" 22 80 12 \
-    "anuais"     "Backups Anuais" ON \
+    "all"       "Executar TODAS as sincronizações" ON \
+    "anuais"     "Backups Anuais" OFF \
     "srv30"      "Servidor 30 (Ribeirao)" OFF \
     "srv40"      "Servidor 40 (Campinas)" OFF \
     "srv70"      "Servidor 70 (BH)" OFF \
@@ -67,11 +68,16 @@ else
         exit 1
     fi
 
-    # Remove aspas das opções selecionadas
-    SELECIONADAS=$(echo $SELECIONADAS | sed 's/"//g')
+    # Remove aspas das opções
+    SELECIONADAS=$(echo "$SELECIONADAS" | sed 's/"//g')
+
+    # Se "all" foi selecionado, usa todas as opções
+    if echo "$SELECIONADAS" | grep -qw "all"; then
+        SELECIONADAS="$TODAS_OPCOES"
+    fi
 fi
 
-# Limpa tela e exibe início
+# Limpa tela e mostra início
 clear
 inicio=$(date "+%d/%m/%Y -- %H:%M:%S")
 echo "Início do processo: $inicio"
