@@ -1,0 +1,169 @@
+#!/bin/bash
+
+LOG_FILE="/var/log/raid_lvm_setup.log"
+
+log() {
+    echo "$(date '+%F %T') - $1" | tee -a "$LOG_FILE"
+}
+
+log "=== INÍCIO DO SCRIPT ==="
+
+select_disks() {
+    local prompt=$1
+    local result_var=$2
+    local disk_list
+    disk_list=$(lsblk -dpno NAME,SIZE | grep -v "boot\|rpmb\|loop")
+
+    local options=()
+    while read -r line; do
+        dev=$(echo "$line" | awk '{print $1}')
+        size=$(echo "$line" | awk '{print $2}')
+        options+=("$dev" "$size" OFF)
+    done <<< "$disk_list"
+
+    selected=$(whiptail --title "$prompt" --checklist "Selecione os discos para o $prompt:" 20 78 10 "${options[@]}" 3>&1 1>&2 2>&3)
+
+    if [ $? -ne 0 ]; then
+        log "Operação cancelada pelo usuário."
+        exit 1
+    fi
+
+    eval "$result_var='$selected'"
+}
+
+choose_raid_level() {
+    RAID_LEVEL=$(whiptail --title "Nível de RAID" --menu "Escolha o nível de RAID:" 15 50 3 \
+        "0" "RAID 0 (Striping)" \
+        "5" "RAID 5 (Paridade distribuída)" \
+        "6" "RAID 6 (Dupla paridade)" 3>&1 1>&2 2>&3)
+
+    if [ $? -ne 0 ]; then
+        log "Operação cancelada pelo usuário."
+        exit 1
+    fi
+
+    echo "$RAID_LEVEL"
+}
+
+RAID_LEVEL=$(choose_raid_level)
+
+select_disks "RAID $RAID_LEVEL - Grupo 1" RAID1_DISKS
+select_disks "RAID $RAID_LEVEL - Grupo 2" RAID2_DISKS
+
+RAID1_CLEAN=$(echo $RAID1_DISKS | tr -d '"')
+RAID2_CLEAN=$(echo $RAID2_DISKS | tr -d '"')
+
+RAID1_COUNT=$(echo $RAID1_CLEAN | wc -w)
+RAID2_COUNT=$(echo $RAID2_CLEAN | wc -w)
+
+validate_raid_disks() {
+    local count=$1
+    local level=$2
+    local label=$3
+    local min=0
+
+    case $level in
+        0) min=2 ;;
+        5) min=3 ;;
+        6) min=4 ;;
+    esac
+
+    if [ "$count" -lt "$min" ]; then
+        log "ERRO: RAID $level exige no mínimo $min discos (grupo: $label)"
+        exit 1
+    fi
+}
+
+validate_raid_disks "$RAID1_COUNT" "$RAID_LEVEL" "Grupo 1"
+validate_raid_disks "$RAID2_COUNT" "$RAID_LEVEL" "Grupo 2"
+
+if whiptail --yesno "Deseja limpar as assinaturas existentes (wipefs -a -f) nos discos selecionados?" 10 60; then
+    log "Limpando RAID1: $RAID1_CLEAN"
+    wipefs -a -f $RAID1_CLEAN || { log "ERRO ao limpar discos do RAID1"; exit 1; }
+
+    log "Limpando RAID2: $RAID2_CLEAN"
+    wipefs -a -f $RAID2_CLEAN || { log "ERRO ao limpar discos do RAID2"; exit 1; }
+fi
+
+MD0_NAME=$(whiptail --inputbox "Nome do primeiro array RAID (ex: md0)" 8 60 "md0" 3>&1 1>&2 2>&3)
+MD1_NAME=$(whiptail --inputbox "Nome do segundo array RAID (ex: md1)" 8 60 "md1" 3>&1 1>&2 2>&3)
+
+for md in "$MD0_NAME" "$MD1_NAME"; do
+    if [ -e "/dev/$md" ]; then
+        log "Dispositivo /dev/$md já existe. Parando array e removendo."
+        mdadm --stop "/dev/$md" || log "Aviso: Não foi possível parar /dev/$md"
+        mdadm --remove "/dev/$md" || log "Aviso: Não foi possível remover /dev/$md"
+        rm -f "/dev/$md"
+    fi
+done
+
+log "Criando RAID $RAID_LEVEL - $MD0_NAME com $RAID1_CLEAN"
+mdadm --create --verbose --run /dev/${MD0_NAME} --level=$RAID_LEVEL --raid-devices=$RAID1_COUNT $RAID1_CLEAN || {
+    log "ERRO: Falha na criação do RAID $MD0_NAME"
+    exit 1
+}
+
+log "Criando RAID $RAID_LEVEL - $MD1_NAME com $RAID2_CLEAN"
+mdadm --create --verbose --run /dev/${MD1_NAME} --level=$RAID_LEVEL --raid-devices=$RAID2_COUNT $RAID2_CLEAN || {
+    log "ERRO: Falha na criação do RAID $MD1_NAME"
+    exit 1
+}
+
+sleep 5
+
+[ -e /dev/${MD0_NAME} ] && [ -e /dev/${MD1_NAME} ] || {
+    log "ERRO: Dispositivos RAID não encontrados após criação."
+    exit 1
+}
+
+log "Atualizando /etc/mdadm/mdadm.conf"
+mdadm --detail --scan >> /etc/mdadm/mdadm.conf || { log "ERRO: Falha ao atualizar mdadm.conf"; exit 1; }
+
+update-initramfs -u || { log "ERRO: Falha ao atualizar initramfs"; exit 1; }
+
+log "Criando volumes físicos nos arrays RAID"
+pvcreate /dev/${MD0_NAME} || { log "ERRO: Falha no pvcreate /dev/${MD0_NAME}"; exit 1; }
+pvcreate /dev/${MD1_NAME} || { log "ERRO: Falha no pvcreate /dev/${MD1_NAME}"; exit 1; }
+
+VG_NAME=$(whiptail --inputbox "Nome do Volume Group (ex: vg_storage)" 8 60 "vg_storage" 3>&1 1>&2 2>&3)
+log "Criando volume group $VG_NAME"
+vgcreate $VG_NAME /dev/${MD0_NAME} /dev/${MD1_NAME} || { log "ERRO: Falha na criação do volume group $VG_NAME"; exit 1; }
+
+LV_NAME=$(whiptail --inputbox "Nome do Logical Volume (ex: lv_dados)" 8 60 "lv_dados" 3>&1 1>&2 2>&3)
+log "Criando logical volume $LV_NAME (100% do espaço livre)"
+lvcreate -l 100%FREE -n $LV_NAME $VG_NAME || { log "ERRO: Falha na criação do logical volume $LV_NAME"; exit 1; }
+
+FS_LABEL=$(whiptail --inputbox "Label (nome) do volume (ex: data)" 8 60 "data" 3>&1 1>&2 2>&3)
+log "Formatando /dev/${VG_NAME}/${LV_NAME} com ext4 e label $FS_LABEL"
+mkfs.ext4 -F -L "$FS_LABEL" /dev/${VG_NAME}/${LV_NAME} || { log "ERRO: Falha ao formatar volume lógico"; exit 1; }
+
+MOUNT_POINT=$(whiptail --inputbox "Ponto de montagem (ex: /mnt/dados)" 8 60 "/mnt/dados" 3>&1 1>&2 2>&3)
+mkdir -p "$MOUNT_POINT"
+
+log "Montando /dev/${VG_NAME}/${LV_NAME} em $MOUNT_POINT"
+mount /dev/${VG_NAME}/${LV_NAME} "$MOUNT_POINT" || { log "ERRO: Falha ao montar o volume"; exit 1; }
+
+UUID=$(blkid -s UUID -o value /dev/${VG_NAME}/${LV_NAME})
+if [ -z "$UUID" ]; then
+    log "ERRO: UUID não encontrado. Não adicionando ao fstab."
+else
+    echo "UUID=$UUID $MOUNT_POINT ext4 defaults 0 2" >> /etc/fstab
+    log "Adicionado ao /etc/fstab com UUID=$UUID"
+    systemctl daemon-reexec
+fi
+
+if whiptail --yesno "Deseja criar um snapshot do Logical Volume agora?" 10 60; then
+    SNAP_NAME=$(whiptail --inputbox "Nome do snapshot (ex: snap1)" 8 60 "snap1" 3>&1 1>&2 2>&3)
+    SNAP_SIZE=$(whiptail --inputbox "Tamanho do snapshot (ex: 1G)" 8 60 "1G" 3>&1 1>&2 2>&3)
+
+    log "Criando snapshot $SNAP_NAME com tamanho $SNAP_SIZE"
+    lvcreate -L $SNAP_SIZE -s -n $SNAP_NAME /dev/${VG_NAME}/${LV_NAME} || {
+        log "ERRO: Falha ao criar snapshot $SNAP_NAME"
+        exit 1
+    }
+    log "Snapshot $SNAP_NAME criado com sucesso."
+else
+    log "Snapshot não criado conforme escolha do usuário."
+fi
+
+log "=== FIM DO SCRIPT ==="
