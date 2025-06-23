@@ -1,0 +1,5 @@
+uol.com.br
+wsj.com
+google.com
+amazon.com
+m.root-servers.net

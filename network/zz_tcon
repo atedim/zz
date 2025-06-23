@@ -1,0 +1,162 @@
+#!/bin/bash
+
+# ===================== CONFIGURAÇÃO =====================
+DNS1="padrao"
+DNS2="8.8.8.8"
+DNS3="1.1.1.1"
+DNS4="192.168.0.99"
+
+NUMTEST=3
+ARQUIVO_HOSTS="/etc/scripts/hostn.txt"
+ARQUIVO_IPS="/etc/scripts/hostip.txt"
+LOGFILE="/etc/scripts/conectividade.log"
+
+# Códigos de cor ANSI
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+# Resultados acumulados
+total_ok=0
+total_warn=0
+total_fail=0
+
+# Registro de tempo de início
+inicio=$(date +%s)
+
+# ===================== FUNÇÕES =====================
+
+log_resultado() {
+    local alvo="$1"
+    local tipo="$2"
+    local status="$3"
+    local data=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "$data | $tipo | $alvo | $status" >> "$LOGFILE"
+}
+
+testar_conectividade() {
+    local host="$1"
+    local dns="$2"
+    local ip
+
+    if [ "$dns" = "padrao" ]; then
+        ip=$(dig +short "$host" | grep -Eo '^[0-9\.]+' | head -n1)
+    else
+        ip=$(dig +short "$host" @"$dns" | grep -Eo '^[0-9\.]+' | head -n1)
+    fi
+
+    if [ -z "$ip" ]; then
+        echo "[$host] - DNS $dns: Falha na resolução"
+        return 1
+    fi
+
+    echo "[$host] - DNS $dns -> IP $ip"
+    ping -c "$NUMTEST" "$ip" > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        echo "    Ping OK"
+        return 0
+    else
+        echo "    Ping FALHOU"
+        return 1
+    fi
+}
+
+testar_ping_simples() {
+    local ip="$1"
+    echo "==== Testando IP: $ip ===="
+    ping -c "$NUMTEST" "$ip" > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        echo "    Ping OK"
+        return 0
+    else
+        echo "    Ping FALHOU"
+        return 1
+    fi
+}
+
+# ===================== EXECUÇÃO DOS TESTES =====================
+
+# Limpa log anterior
+echo "==== INÍCIO DO LOG: $(date) ====" > "$LOGFILE"
+
+DNSS=( "$DNS1" "$DNS2" "$DNS3" "$DNS4" )
+
+# ---------- Testes com DNS (hostn.txt) ----------
+if [ ! -f "$ARQUIVO_HOSTS" ]; then
+    echo -e "${RED}Arquivo $ARQUIVO_HOSTS não encontrado!${NC}"
+    exit 1
+fi
+
+echo "===== INICIANDO TESTES COM DNS ====="
+
+while read -r host || [ -n "$host" ]; do
+    [ -z "$host" ] && continue
+    echo -e "\n==== Testando host: $host ===="
+
+    falhas=0
+
+    for dns in "${DNSS[@]}"; do
+        testar_conectividade "$host" "$dns"
+        [ $? -ne 0 ] && ((falhas++))
+    done
+
+    total=${#DNSS[@]}
+    limite=$((total / 2))
+
+    if [ "$falhas" -gt "$limite" ]; then
+        echo -e ">> ${RED}ERRO: $falhas de $total testes falharam para $host!${NC}"
+        log_resultado "$host" "DNS" "FALHA"
+        ((total_fail++))
+    elif [ "$falhas" -gt 0 ]; then
+        echo -e ">> ${YELLOW}AVISO: $((total - falhas)) de $total testes OK para $host${NC}"
+        log_resultado "$host" "DNS" "AVISO"
+        ((total_warn++))
+    else
+        echo -e ">> ${GREEN}SUCESSO: Todos os $total testes OK para $host${NC}"
+        log_resultado "$host" "DNS" "OK"
+        ((total_ok++))
+    fi
+done < "$ARQUIVO_HOSTS"
+
+# ---------- Testes por IP direto (hostip.txt) ----------
+if [ ! -f "$ARQUIVO_IPS" ]; then
+    echo -e "${RED}Arquivo $ARQUIVO_IPS não encontrado!${NC}"
+    exit 1
+fi
+
+echo -e "\n===== INICIANDO TESTES POR IP DIRETO ====="
+
+while read -r ip || [ -n "$ip" ]; do
+    [ -z "$ip" ] && continue
+
+    falhas=0
+    total=1
+
+    testar_ping_simples "$ip"
+    [ $? -ne 0 ] && ((falhas++))
+
+    if [ "$falhas" -gt 0 ]; then
+        echo -e ">> ${RED}ERRO: $falhas de $total testes falharam para $ip!${NC}"
+        log_resultado "$ip" "IP" "FALHA"
+        ((total_fail++))
+    else
+        echo -e ">> ${GREEN}SUCESSO: $total de $total testes OK para $ip${NC}"
+        log_resultado "$ip" "IP" "OK"
+        ((total_ok++))
+    fi
+done < "$ARQUIVO_IPS"
+
+# Registro de tempo de fim e cálculo de duração
+fim=$(date +%s)
+duracao=$((fim - inicio))
+minutos=$((duracao / 60))
+segundos=$((duracao % 60))
+
+# ===================== RELATÓRIO FINAL =====================
+echo -e "\n===== RELATÓRIO FINAL ====="
+echo -e "${GREEN}✔️  Sucessos: $total_ok${NC}"
+echo -e "${YELLOW}⚠️  Avisos (algumas falhas): $total_warn${NC}"
+echo -e "${RED}❌ Falhas críticas: $total_fail${NC}"
+echo -e "⏱ Tempo total de execução: ${minutos}m ${segundos}s"
+echo -e "📝 Log salvo em: ${LOGFILE}"
