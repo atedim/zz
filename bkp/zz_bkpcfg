@@ -58,7 +58,7 @@ done
 dias_reter=7
 
 # Diretórios e exclusões
-diretorios="/etc/scripts /etc/ssh /etc/samba"
+diretorios="/etc/fstab /etc/scripts /etc/ssh /etc/samba"
 excluidos="/etc/scripts/bkp_configs"
 diretorio_destino="/etc/scripts/bkp_configs"
 
