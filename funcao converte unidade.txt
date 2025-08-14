@@ -1,0 +1,43 @@
+converter_unidade() {
+    local valor=$1
+    local unidade_inicial=$2
+
+    # Unidades e seus fatores base 1024
+    local -a unidades=("B" "KB" "MB" "GB" "TB" "PB" "EB")
+    local unidade=$valor
+    local indice=0
+
+    # Ajustar ponto de partida dependendo da unidade inicial
+    case "${unidade_inicial,,}" in
+        b|byte|bytes) indice=0 ;;
+        kb|kib) indice=1 ;;
+        mb|mib) indice=2 ;;
+        gb|gib) indice=3 ;;
+        tb|tib) indice=4 ;;
+        pb|pib) indice=5 ;;
+        eb|eib) indice=6 ;;
+        *) echo "Unidade inválida: $unidade_inicial" >&2; return 1 ;;
+    esac
+
+    # Converte valor para bytes
+    for ((i=0; i<indice; i++)); do
+        valor=$(awk "BEGIN {printf \"%.10f\", $valor * 1024}")
+    done
+
+    # Agora faz a conversão para a maior unidade possível
+    for ((i=0; i<${#unidades[@]}; i++)); do
+        if (( $(awk "BEGIN {print ($valor < 1024)}") )); then
+            printf "%.2f %s\n" "$valor" "${unidades[i]}"
+            return
+        fi
+        valor=$(awk "BEGIN {printf \"%.10f\", $valor / 1024}")
+    done
+
+    # Caso ultrapasse tudo
+    printf "%.2f %s\n" "$valor" "${unidades[-1]}"
+}
+
+
+#uso  
+#converter_unidade 8796294348800 bytes
+
