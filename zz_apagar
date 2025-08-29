@@ -1,0 +1,98 @@
+#!/bin/bash
+# ======================================================================
+# Script: limpa_pastas.sh
+# Função: Lista ou apaga pastas contidas em um arquivo de texto
+# Autor : (seu nome)
+# comando pra limpar uma lista 
+# grep -F -v -f assistir.txt todos.txt > assistidos.txt
+# ======================================================================
+
+# -------- VARIÁVEIS --------
+ARQ_LISTA="/etc/scripts/zz_apagar.txt"   # Arquivo contendo as pastas a processar
+ALVO="/work/dados"                       # Pasta onde as pastas da lista estão
+LOG_DIR="/etc/scripts/log/limpa_pastas"  # Onde salvar os logs
+DATAHORA=$(date +"%d%m%Y_%H%M%S")
+LOG_FILE="$LOG_DIR/apagados_${DATAHORA}.log"
+
+# Cores
+VERDE="\033[1;32m"
+VERMELHO="\033[1;31m"
+RESET="\033[0m"
+
+# Cria pasta de logs se não existir
+mkdir -p "$LOG_DIR"
+
+# -------- FUNÇÕES --------
+listar_pastas() {
+    echo "Listando pastas do arquivo: $ARQ_LISTA (dentro de $ALVO)"
+    echo "---------------------------------------------------------"
+
+    encontrados=0
+    nao_encontrado=0
+
+    while IFS= read -r pasta || [[ -n "$pasta" ]]; do
+        [[ -z "$pasta" ]] && continue
+        pastas_encontradas=$(find "$ALVO" -type d -name "$pasta" 2>/dev/null)
+        if [[ -n "$pastas_encontradas" ]]; then
+            while IFS= read -r dir; do
+                echo -e "$dir -> ${VERDE}ENCONTRADO${RESET}"
+                ((encontrados++))
+            done <<< "$pastas_encontradas"
+        else
+            echo -e "$pasta -> ${VERMELHO}NÃO ENCONTRADO${RESET}"
+            ((nao_encontrado++))
+        fi
+    done < "$ARQ_LISTA"
+
+    echo "---------------------------------------------------------"
+    echo -e "Resumo: ${VERDE}${encontrados} ENCONTRADO(S)${RESET}, ${VERMELHO}${nao_encontrado} NÃO ENCONTRADO(S)${RESET}"
+
+    if [[ $nao_encontrado -eq 0 ]]; then
+        echo -e "${VERDE}✅ Todas as pastas foram encontradas.${RESET}"
+    fi
+}
+
+apagar_pastas() {
+    echo "Apagando pastas listadas em: $ARQ_LISTA (dentro de $ALVO)"
+    echo "Log: $LOG_FILE"
+    echo "---------------------------------------------------------"
+
+    apagados=0
+    nao_encontrado=0
+
+    while IFS= read -r pasta || [[ -n "$pasta" ]]; do
+        [[ -z "$pasta" ]] && continue
+        pastas_encontradas=$(find "$ALVO" -type d -name "$pasta" 2>/dev/null)
+        if [[ -n "$pastas_encontradas" ]]; then
+            while IFS= read -r dir; do
+                rm -rf -- "$dir"
+                echo -e "$(date +"%d/%m/%Y %H:%M:%S") - ${VERDE}APAGADO${RESET}: $dir" | tee -a "$LOG_FILE"
+                ((apagados++))
+            done <<< "$pastas_encontradas"
+        else
+            echo -e "$(date +"%d/%m/%Y %H:%M:%S") - ${VERMELHO}NÃO ENCONTRADO${RESET}: $pasta" | tee -a "$LOG_FILE"
+            ((nao_encontrado++))
+        fi
+    done < "$ARQ_LISTA"
+
+    echo "---------------------------------------------------------"
+    echo -e "Resumo: ${VERDE}${apagados} APAGADO(S)${RESET}, ${VERMELHO}${nao_encontrado} NÃO ENCONTRADO(S)${RESET}"
+
+    if [[ $nao_encontrado -eq 0 ]]; then
+        echo -e "${VERDE}✅ Todas as pastas da lista foram apagadas com sucesso!${RESET}"
+    fi
+}
+
+# -------- EXECUÇÃO --------
+case "$1" in
+    -list)
+        listar_pastas
+        ;;
+    -del)
+        apagar_pastas
+        ;;
+    *)
+        echo "Uso: $0 [-list | -del]"
+        exit 1
+        ;;
+esac
