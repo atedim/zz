@@ -1,0 +1,10 @@
+#!/bin/bash
+
+
+#menores primeiro
+#rclone sync CarboAlba-R:dr/bkp/ 163-Grievous-L:Dados/Trabalho/bkp  --progress --retries 3 --low-level-retries 10 --transfers 20  --order-by size,asc --stats 1s --timeout 1h
+rclone sync CarboAlba-R:dr/bkp/ 163-Grievous-L:Dados/Trabalho/bkp  --progress --retries 3 --low-level-retries 10 --transfers 20  --order-by size,asc --stats 1s --timeout 1h
+
+#maiores primeiro
+#rclone sync CarboAlba-R:dados/bkp/ 167-NASareth-L:All/Trabalho/bkp/  --progress --retries 3 --low-level-retries 10 --transfers 30 --check-first --order-by size,desc --stats 1s --timeout 1h
+

@@ -1,3 +1,6 @@
 #!/bin/bash
 
-rclone sync 163-Grievous-L:Dados/ 167-NASareth-L:All/ --progress --retries 3 --low-level-retries 10 --transfers 20  --order-by size,asc --stats 1s --timeout 1h
+#rclone sync 163-Grievous-L:Dados/ 167-NASareth-L:All/ --progress --retries 3 --low-level-retries 10 --transfers 20  --order-by size,asc --stats 1s --timeout 1h
+
+
+rclone sync 163-Grievous-L:Dados/ 167-NASareth-L:All/ --progress --retries 3 --low-level-retries 10 --transfers 64 --checkers 64 --buffer-size 64M --multi-thread-streams=8 --use-mmap --stats 1s --timeout 1h
