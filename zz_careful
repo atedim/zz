@@ -1,0 +1,120 @@
+#!/bin/bash
+# limpa_dir_rapido.sh - Limpa completamente uma pasta de forma otimizada
+# 
+# Uso:
+#   ./limpa_dir_rapido.sh [CAMINHO_DA_PASTA] [-v|--verbose]
+#
+# Parâmetros:
+#   CAMINHO_DA_PASTA   Diretório que será limpo. Se não for informado, usa a pasta atual.
+#   -v, --verbose      Exibe passo a passo de todos os arquivos/pastas removidos.
+#   -h, --help         Exibe esta ajuda e sai.
+#
+# Exemplo:
+#   ./limpa_dir_rapido.sh /home/usuario/teste -v
+
+# Função para exibir ajuda
+usage() {
+    grep '^#' "$0" | sed 's/^#//'
+    exit 0
+}
+
+# Verifica se foi pedido help
+for arg in "$@"; do
+    case "$arg" in
+        -h|--help)
+            usage
+            ;;
+    esac
+done
+
+# Parâmetros
+VERBOSE=0
+DIR=""
+
+# Processa parâmetros
+for arg in "$@"; do
+    case "$arg" in
+        -v|--verbose)
+            VERBOSE=1
+            ;;
+        *)
+            DIR="$arg"
+            ;;
+    esac
+done
+
+# Se não passou diretório, usa atual
+DIR="${DIR:-.}"
+DIR=$(realpath "$DIR")
+
+if [ ! -d "$DIR" ]; then
+    echo "Erro: diretório '$DIR' não encontrado."
+    exit 1
+fi
+
+echo "[INFO] Limpando diretório: $DIR"
+
+# Função para execução com ou sem verbose
+run_cmd() {
+    if [ "$VERBOSE" -eq 1 ]; then
+        "$@"
+    else
+        "$@" 2>/dev/null
+    fi
+}
+
+# 1️⃣ Tentativa rápida: remover tudo direto
+echo "[INFO] Tentativa rápida: rm -rf * e .*"
+run_cmd rm -rf "$DIR"/* "$DIR"/.[!.]*
+
+# 2️⃣ Verifica se ainda restou algo
+if [ "$(find "$DIR" -mindepth 1 | wc -l)" -gt 0 ]; then
+    echo "[WARN] Alguns arquivos restaram, entrando em modo seguro..."
+
+    # Renomear tudo recursivamente para nomes simples
+    echo "[INFO] Renomeando arquivos/pastas para nomes simples..."
+    count=1
+    find "$DIR" -mindepth 1 -depth | while read -r f; do
+        parent=$(dirname "$f")
+        newname="$parent/$count"
+        if [ "$f" != "$newname" ]; then
+            run_cmd mv "$f" "$newname"
+            [ "$VERBOSE" -eq 1 ] && echo "Renomeado: $f -> $newname"
+            count=$((count+1))
+        fi
+    done
+
+    # Remover arquivos
+    echo "[INFO] Removendo arquivos..."
+    find "$DIR" -type f | while read -r f; do
+        run_cmd rm -f -- "$f"
+        [ "$VERBOSE" -eq 1 ] && echo "rm -f '$f'"
+    done
+
+    # Remover links simbólicos
+    echo "[INFO] Removendo links simbólicos..."
+    find "$DIR" -type l | while read -r f; do
+        run_cmd rm -f -- "$f"
+        [ "$VERBOSE" -eq 1 ] && echo "rm -f '$f'"
+    done
+
+    # Remover diretórios vazios
+    echo "[INFO] Removendo diretórios vazios..."
+    find "$DIR" -type d -empty | while read -r d; do
+        run_cmd rmdir -- "$d"
+        [ "$VERBOSE" -eq 1 ] && echo "rmdir '$d'"
+    done
+
+    # Última tentativa: remover pelo inode
+    echo "[INFO] Tentando remover pelo inode itens restantes..."
+    while [ "$(find "$DIR" -mindepth 1 | wc -l)" -gt 0 ]; do
+        for inode in $(find "$DIR" -mindepth 1 -printf "%i\n"); do
+            find "$DIR" -inum "$inode" | while read -r f; do
+                run_cmd rm -rf -- "$f"
+                [ "$VERBOSE" -eq 1 ] && echo "rm -rf via inode: '$f'"
+            done
+        done
+    done
+fi
+
+echo "[OK] Diretório '$DIR' está completamente vazio."

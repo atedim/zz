@@ -1,0 +1,51 @@
+#!/bin/bash
+# find_sbse.sh - Lista ou deleta arquivos que começam com "sbse" (case-insensitive)
+#
+# Uso:
+#   ./find_sbse.sh [CAMINHO_DA_PASTA] -list
+#   ./find_sbse.sh [CAMINHO_DA_PASTA] -del
+
+usage() {
+    grep '^#' "$0" | sed 's/^#//'
+    exit 0
+}
+
+# Ajuda
+for arg in "$@"; do
+    case "$arg" in
+        -h|--help)
+            usage
+            ;;
+    esac
+done
+
+# Parâmetros
+ACTION="list"
+DIR="."
+
+for arg in "$@"; do
+    case "$arg" in
+        -list) ACTION="list" ;;
+        -del)  ACTION="del"  ;;
+        *)     DIR="$arg"    ;;
+    esac
+done
+
+DIR=$(realpath "$DIR")
+
+if [ ! -d "$DIR" ]; then
+    echo "Erro: diretório '$DIR' não encontrado."
+    exit 1
+fi
+
+case "$ACTION" in
+    list)
+        echo "[INFO] Arquivos encontrados:"
+        find "$DIR" -type f -iname "sbse*"
+        ;;
+    del)
+        echo "[INFO] Deletando arquivos encontrados..."
+        # usa -delete do find (muito mais rápido que loop)
+        find "$DIR" -type f -iname "sbse*" -delete -print
+        ;;
+esac
