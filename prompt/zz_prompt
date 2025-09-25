@@ -27,5 +27,10 @@ else
     echo "Nova customizacao de prompt adicionada com sucesso."
 fi
 
+###Insere Script to PATH###
+sed -i -e '$a\' ~/.bashrc && echo 'export PATH=$PATH:/etc/scripts' >>~/.bashrc && sed -i -e '$a\' ~/.bashrc
+###Insere Script to PATH###
+
+
 # Aplica as mudancas imediatamente
 source "$BASHRC"
