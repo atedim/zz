@@ -1,0 +1,154 @@
+#!/bin/bash
+# =====================================================================
+#  KSMBD Auto Installer / Remover - Debian 13
+#  Autor: Antonio Tedim
+#  Versão: 1.0 - 21/10/2025
+# =====================================================================
+
+CONFIG_FILE="/etc/ksmbd/ksmbd.conf"
+CONFIG_DISABLED="/etc/ksmbd/ksmbd.conf.disabled"
+TEMP_DIR="/etc/temp"
+
+# ---------------------------------------------------------------------
+# Banner
+# ---------------------------------------------------------------------
+banner() {
+    echo "====================================================================="
+    echo "        K S M B D   -   Instalador / Remoção Automática"
+    echo "====================================================================="
+    echo
+    echo "Modo de uso:"
+    echo "  $0 --install    -> Instala e configura o KSMBD"
+    echo "  $0 --remove    -> Remove e desativa o KSMBD"
+    echo
+    echo "Debian 13 - Automação completa por Antonio Tedim"
+    echo "====================================================================="
+    echo
+}
+
+# ---------------------------------------------------------------------
+# Verifica se está rodando como root
+# ---------------------------------------------------------------------
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        echo "❌ Este script precisa ser executado como root."
+        echo "Use: sudo $0 --install  ou  sudo $0 --remove"
+        exit 1
+    fi
+}
+
+# ---------------------------------------------------------------------
+# Instala e configura o KSMBD
+# ---------------------------------------------------------------------
+install_ksmbd() {
+    echo "➡️  Iniciando instalação e configuração do KSMBD..."
+
+    # Cria pasta temporária
+    if [ ! -d "$TEMP_DIR" ]; then
+        mkdir -p "$TEMP_DIR" || { echo "❌ Falha ao criar $TEMP_DIR"; exit 1; }
+        echo "✅ Pasta $TEMP_DIR criada."
+    else
+        echo "ℹ️  Pasta $TEMP_DIR já existe."
+    fi
+
+    # Instala pacotes
+    echo "➡️  Atualizando repositórios e instalando dependências..."
+    apt update -y && apt install -y ksmbd-tools || { echo "❌ Falha ao instalar pacotes."; exit 1; }
+
+    # Ativa módulo ksmbd
+    echo "➡️  Verificando módulo KSMBD..."
+    if ! modinfo ksmbd &>/dev/null; then
+        echo "❌ Módulo ksmbd não encontrado no kernel!"
+        exit 1
+    fi
+    modprobe ksmbd && echo "✅ Módulo KSMBD carregado."
+
+    # Habilita e inicia serviço
+    echo "➡️  Ativando serviço ksmbd..."
+    systemctl enable --now ksmbd || { echo "❌ Falha ao iniciar serviço ksmbd."; exit 1; }
+
+    # Cria configuração
+    echo "➡️  Criando arquivo de configuração..."
+    cat > "$CONFIG_FILE" <<EOF
+[global]
+workgroup = WORKGROUP
+server string = Servidor KSMBD
+server min protocol = SMB2
+server max protocol = SMB3
+smb2 leases = yes
+smb2 durable handles = yes
+
+[temp]
+path = /etc/temp
+read only = no
+browseable = yes
+guest ok = yes
+create mask = 0777
+directory mask = 0777
+EOF
+
+    echo "✅ Arquivo de configuração criado em $CONFIG_FILE"
+
+    # Reinicia o serviço
+    echo "➡️  Reiniciando serviço KSMBD..."
+    systemctl restart ksmbd && echo "✅ Serviço KSMBD reiniciado com sucesso."
+
+    echo
+    echo "====================================================================="
+    echo "✅ Instalação concluída!"
+    echo "A pasta compartilhada é:  /etc/temp"
+    echo "Acesse a partir do Windows ou Linux em:"
+    echo "   \\\\IP_DO_SERVIDOR\\temp"
+    echo "====================================================================="
+}
+
+# ---------------------------------------------------------------------
+# Remove e desativa o KSMBD
+# ---------------------------------------------------------------------
+remove_ksmbd() {
+    echo "➡️  Desativando e removendo KSMBD..."
+
+    # Para e desabilita o serviço
+    systemctl disable --now ksmbd &>/dev/null && echo "✅ Serviço KSMBD desativado."
+
+    # Remove módulo do kernel
+    if lsmod | grep -q ksmbd; then
+        modprobe -r ksmbd && echo "✅ Módulo KSMBD removido do kernel."
+    else
+        echo "ℹ️  Módulo KSMBD não estava carregado."
+    fi
+
+    # Renomeia configuração
+    if [ -f "$CONFIG_FILE" ]; then
+        mv "$CONFIG_FILE" "$CONFIG_DISABLED"
+        echo "✅ Arquivo de configuração renomeado para ksmbd.conf.disabled"
+    else
+        echo "ℹ️  Nenhum arquivo de configuração ativo encontrado."
+    fi
+
+    echo
+    echo "====================================================================="
+    echo "✅ Remoção concluída!"
+    echo "O serviço foi desativado e o módulo descarregado."
+    echo "====================================================================="
+}
+
+# ---------------------------------------------------------------------
+# Execução principal
+# ---------------------------------------------------------------------
+banner
+check_root
+
+case "$1" in
+    --install)
+        install_ksmbd
+        ;;
+    --remove)
+        remove_ksmbd
+        ;;
+    *)
+        echo "❌ Opção inválida!"
+        echo "Use:  $0 --instal  ou  $0 --remove"
+        exit 1
+        ;;
+esac
