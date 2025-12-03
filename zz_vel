@@ -1,0 +1,124 @@
+#!/bin/bash
+
+###############################################################################
+# Monitor de Rede simplificado
+# - Sem Unicode / Sem ANSI
+# - 100% compatível com qualquer terminal (cmd, powershell, ssh, web)
+# - Exibe RX/TX, máximos, mínimos, médias
+# - Converte KB/s -> Mb/s corretamente
+# - Mostra percentual real do link (% RX e % TX)
+###############################################################################
+
+# Detectar interface ativa
+IFACE=""
+for i in /sys/class/net/*; do
+    NAME=$(basename "$i")
+    if [[ "$(cat /sys/class/net/$NAME/operstate 2>/dev/null)" == "up" ]]; then
+        IFACE="$NAME"
+        break
+    fi
+done
+
+if [[ -z "$IFACE" ]]; then
+    echo "Nenhuma interface ativa encontrada."
+    exit 1
+fi
+
+OLD_RX=$(cat /sys/class/net/$IFACE/statistics/rx_bytes)
+OLD_TX=$(cat /sys/class/net/$IFACE/statistics/tx_bytes)
+
+# Histórico (5 medições)
+HIST_RX=(0 0 0 0 0)
+HIST_TX=(0 0 0 0 0)
+
+MAX_RX=0
+MAX_TX=0
+MIN_RX=999999
+MIN_TX=999999
+
+# Formatar velocidades
+format_speed() {
+    local v="$1"
+    if (( v >= 1024 )); then
+        echo "$((v/1024)).$(((v*10/1024)%10)) MB/s"
+    else
+        echo "${v} KB/s"
+    fi
+}
+
+# Converter KB/s → Mb/s
+kb_to_mbps() {
+    local kb="$1"
+    echo "$(awk "BEGIN {printf \"%.2f\", ($kb*8)/1024}")"
+}
+
+export LC_NUMERIC=C
+
+while true; do
+    sleep 1
+
+    NEW_RX=$(cat /sys/class/net/$IFACE/statistics/rx_bytes)
+    NEW_TX=$(cat /sys/class/net/$IFACE/statistics/tx_bytes)
+
+    DIFF_RX=$((NEW_RX - OLD_RX))
+    DIFF_TX=$((NEW_TX - OLD_TX))
+
+    OLD_RX=$NEW_RX
+    OLD_TX=$NEW_TX
+
+    RX=$((DIFF_RX/1024))
+    TX=$((DIFF_TX/1024))
+
+    (( RX > MAX_RX )) && MAX_RX=$RX
+    (( TX > MAX_TX )) && MAX_TX=$TX
+    (( RX < MIN_RX )) && MIN_RX=$RX
+    (( TX < MIN_TX )) && MIN_TX=$TX
+
+    HIST_RX=("${HIST_RX[@]:1}" "$RX")
+    HIST_TX=("${HIST_TX[@]:1}" "$TX")
+
+    AVG_RX=$(( (HIST_RX[0]+HIST_RX[1]+HIST_RX[2]+HIST_RX[3]+HIST_RX[4]) / 5 ))
+    AVG_TX=$(( (HIST_TX[0]+HIST_TX[1]+HIST_TX[2]+HIST_TX[3]+HIST_TX[4]) / 5 ))
+
+    LINK=$(ethtool $IFACE 2>/dev/null | awk '/Speed:/ {print $2}' | sed 's/Mb\/s//')
+    if [[ -z "$LINK" ]]; then
+        LINK=1000
+    fi
+
+    RX_MBPS=$(kb_to_mbps "$RX")
+    TX_MBPS=$(kb_to_mbps "$TX")
+
+    RX_MBPS_CLEAN=$(echo "$RX_MBPS" | tr ',' '.')
+    TX_MBPS_CLEAN=$(echo "$TX_MBPS" | tr ',' '.')
+
+    PCT_RX=$(awk -v a="$RX_MBPS_CLEAN" -v b="$LINK" 'BEGIN { if (b>0) printf "%.2f", (a/b)*100; else print "0.00" }')
+    PCT_TX=$(awk -v a="$TX_MBPS_CLEAN" -v b="$LINK" 'BEGIN { if (b>0) printf "%.2f", (a/b)*100; else print "0.00" }')
+
+    clear
+    echo "===== Monitor de Rede ====="
+    echo "Interface: $IFACE"
+    echo
+
+    echo "Top Speed RX:  $(format_speed $MAX_RX)"
+    echo "Top Speed TX:  $(format_speed $MAX_TX)"
+    echo
+    echo "Mínimo RX:     $(format_speed $MIN_RX)"
+    echo "Mínimo TX:     $(format_speed $MIN_TX)"
+    echo
+    echo "Média RX (5):  $(format_speed $AVG_RX)"
+    echo "Média TX (5):  $(format_speed $AVG_TX)"
+    echo
+
+    echo "Link detectado: ${LINK} Mb/s"
+    echo
+    echo "Uso do link agora:"
+    echo "RX: ${RX_MBPS} Mb/s   (${PCT_RX} %)"
+    echo "TX: ${TX_MBPS} Mb/s   (${PCT_TX} %)"
+    echo
+
+    echo "Últimas 5 medições:"
+    echo
+    for i in {0..4}; do
+        echo "$((i+1))) RX: $(format_speed ${HIST_RX[$i]})    TX: $(format_speed ${HIST_TX[$i]})"
+    done
+done

@@ -1,0 +1,82 @@
+
+#!/bin/bash
+
+# ===============================
+# CONFIGURAÇÃO INICIAL
+# ===============================
+
+# Valor customizado para o MAX-TRANSFER (ex: 720)
+MAX_TRANSFER_GB=720
+
+# Converte para formato aceito pelo rclone (ex: 720G)
+MAX_TRANSFER="${MAX_TRANSFER_GB}G"
+
+# Data/hora de início do script
+INICIO_SCRIPT=$(date "+%Y-%m-%d %H:%M:%S")
+echo "===== INÍCIO DO SCRIPT: $INICIO_SCRIPT ====="
+echo ""
+
+# ===============================
+# FUNÇÃO DE EXECUÇÃO DE ETAPAS
+# ===============================
+executar_etapa() {
+    ETAPA_NOME="$1"
+    COMANDO="$2"
+
+    echo ">>> Iniciando etapa: $ETAPA_NOME"
+    echo "    Início: $(date "+%Y-%m-%d %H:%M:%S")"
+
+    # Executa comando
+    eval $COMANDO
+    STATUS=$?
+
+    echo "    Fim: $(date "+%Y-%m-%d %H:%M:%S")"
+
+    if [ $STATUS -eq 0 ]; then
+        echo "    ✔ SUCESSO: Etapa '$ETAPA_NOME' concluída sem erros"
+    else
+        echo "    ✘ ERRO: Etapa '$ETAPA_NOME' encontrou falhas (STATUS=$STATUS)"
+        echo "    >>> ATENÇÃO! Verifique os logs acima."
+    fi
+    echo ""
+}
+
+# ===============================
+# ETAPAS DE BACKUP RCLONE
+# ===============================
+
+executar_etapa "Anuais" \
+"rclone sync /dr/bkp/matriz/anuais GDRIVE_Anuais:anuais/ \
+--progress --retries 3 --low-level-retries 10 --transfers 10 \
+--max-transfer $MAX_TRANSFER --order-by size,desc --stats=1s --timeout 1h"
+
+executar_etapa "Filiais" \
+"rclone sync /dr/bkp/filiais/ GDRIVE_Filiais:filiais/ \
+--progress --retries 3 --low-level-retries 10 --transfers 10 \
+--max-transfer $MAX_TRANSFER --order-by size,desc --stats=1s --timeout 1h"
+
+#executar_etapa "Matriz8" \
+#"rclone sync /dr/bkp/matriz/servers/8/ GDRIVE_Matriz8:matriz/servers/8/ \
+#--progress --retries 3 --low-level-retries 10 --transfers 10 \
+#--max-transfer $MAX_TRANSFER --order-by size,desc --stats=1s --timeout 1h"
+
+#executar_etapa "Matriz5" \
+#"rclone sync /dr/bkp/matriz/servers/5/ GDRIVE_Matriz5:matriz/servers/5/ \
+#--progress --retries 3 --low-level-retries 10 --transfers 10 \
+#--max-transfer $MAX_TRANSFER --order-by size,desc --stats=1s --timeout 1h"
+
+
+rclone dedupe GDRIVE_Anuais:
+rclone dedupe  GDRIVE_Filiais:
+rclone dedupe  GDRIVE_Matriz8:
+rclone dedupe  GDRIVE_Matriz5:
+
+
+# ===============================
+# FIM DO SCRIPT
+# ===============================
+
+FIM_SCRIPT=$(date "+%Y-%m-%d %H:%M:%S")
+echo ""
+echo "===== FIM DO SCRIPT: $FIM_SCRIPT ====="
+echo ""

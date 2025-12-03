@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# Origens e destino
+ORIGEM="/work/Dados"
+DESTINO="Tank:dados/Main"
+
+# Verifica se o diretório existe
+if [ ! -d "$ORIGEM" ]; then
+    echo "ERRO: Diretório $ORIGEM não existe!"
+    exit 1
+fi
+
+# Verifica se rclone está instalado
+if ! command -v rclone >/dev/null 2>&1; then
+    echo "ERRO: rclone não está instalado!"
+    exit 1
+fi
+
+# Data e hora
+echo "Início: $(date)"
+
+# Comando de sincronização
+rclone sync "$ORIGEM" "$DESTINO" \
+    --progress \
+    --transfers=8 \
+    --checkers=16 \
+    --create-empty-src-dirs \
+    --no-update-modtime
+
+# Caso queira gerar log em arquivo, troque por:
+# rclone sync "$ORIGEM" "$DESTINO" \
+#     --transfers=8 \
+#     --checkers=16 \
+#     --create-empty-src-dirs \
+#     --no-update-modtime \
+#     --log-file="/var/log/rclone_sync.log" \
+#     --log-level=INFO
+
+echo "Fim: $(date)"

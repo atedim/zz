@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# Verifica parâmetro
+if [ -z "$1" ]; then
+    echo "Uso: $0 /caminho/do/diretorio"
+    exit 1
+fi
+
+DIR="$1"
+
+if [ ! -d "$DIR" ]; then
+    echo "Diretório não encontrado: $DIR"
+    exit 1
+fi
+
+echo "Analisando subpastas de: $DIR"
+echo
+
+TOTAL_ARQS=0
+TOTAL_DIRS=0
+TOTAL_BYTES=0
+
+# Calcula tamanho total do diretório pai
+TOTAL_PAI=$(du -sb "$DIR" 2>/dev/null | awk '{print $1}')
+
+# Percorre subpastas do primeiro nível
+for SUB in "$DIR"/*; do
+    if [ -d "$SUB" ]; then
+        echo "📁 Pasta: $(basename "$SUB")"
+
+        # Contagem RECURSIVA (não apenas nível 1)
+        ARQS=$(find "$SUB" -type f | wc -l)
+        TOTAL_ARQS=$((TOTAL_ARQS + ARQS))
+
+        # Contagem de pastas RECURSIVA
+        DIRS=$(find "$SUB" -type d | wc -l)
+        DIRS=$((DIRS - 1))  # remove a própria pasta
+        TOTAL_DIRS=$((TOTAL_DIRS + DIRS))
+
+        # Tamanho total da pasta
+        BYTES=$(du -sb "$SUB" | awk '{print $1}')
+        TOTAL_BYTES=$((TOTAL_BYTES + BYTES))
+
+        # Formato legível
+        TAM=$(du -sh "$SUB" | awk '{print $1}')
+
+        # Percentual total
+        PERC=$(awk -v a="$BYTES" -v b="$TOTAL_PAI" 'BEGIN { printf "%.2f", (a/b)*100 }')
+
+        echo "  Arquivos:         $ARQS"
+        echo "  Pastas:           $DIRS"
+        echo "  Tamanho:          $TAM"
+        echo "  Percentual total: $PERC %"
+        echo
+    fi
+done
+
+TOTAL_HUMAN=$(numfmt --to=iec --suffix=B "$TOTAL_BYTES")
+
+echo "========================"
+echo "   SOMATÓRIO GERAL"
+echo "========================"
+echo "Total de Arquivos:     $TOTAL_ARQS"
+echo "Total de Pastas:       $TOTAL_DIRS"
+echo "Espaço Total Usado:    $TOTAL_HUMAN"
+echo "========================"

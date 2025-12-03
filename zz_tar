@@ -1,0 +1,252 @@
+#!/bin/bash
+###############################################################################
+# SCRIPT: zz_tar
+# AUTOR: Antonio Tedim + ChatGPT
+# DATA: 2025-11
+#
+# FINALIDADE:
+#     Criar TAR ou TAR.GZ de cada subpasta dentro de BASE_DIR,
+#     opcionalmente dividir em partes, aplicar retenção automática
+#     e verificar espaço antes de processar.
+#
+# USO:
+#     ./zz_tar
+#
+# CONFIGURAÇÕES DISPONÍVEIS:
+# -----------------------------------------------------------------------------
+# BASE_DIR            = Diretório que contém as pastas a serem empacotadas
+# DESTINO             = Diretório onde os TARs serão salvos
+# LOG                 = Caminho do arquivo de log
+#
+# TAMANHO_MAX         = Tamanho máximo de cada parte (ex.: 250G, 100G, 25G, 1024M)
+#
+# COMPRESSAO="sim"    = Cria arquivo .tar.gz
+# COMPRESSAO="nao"    = Cria arquivo .tar sem compressão
+#
+# RETENCAO_TIPO:
+#     "nenhum"        → Não apaga nada
+#     "quantidade"    → Mantém apenas N arquivos mais recentes
+#     "dias"          → Remove arquivos mais antigos que X dias
+#
+# RETENCAO_VALOR:
+#     Se RETENCAO_TIPO="quantidade" → número de arquivos a manter, ex.: 5
+#     Se RETENCAO_TIPO="dias"       → número de dias, ex.: 30
+#
+# VERIFICAR_ESPACO="sim"  = Testar espaço livre antes de criar o TAR
+# VERIFICAR_ESPACO="nao"  = Ignorar essa verificação
+#
+###############################################################################
+
+# ============================================================================
+# CONFIGURAÇÕES DO USUÁRIO
+# ============================================================================
+
+
+BASE_DIR="/dr/bkp/filiais"
+DESTINO="/dr/tar"
+LOG="/var/log/zz_tar.log"
+
+TAMANHO_MAX="50G"
+COMPRESSAO="nao"        # sim / nao
+
+RETENCAO_TIPO="quantidade"   # nenhum / quantidade / dias
+RETENCAO_VALOR=5
+
+VERIFICAR_ESPACO="sim"       # sim / nao
+
+
+# ============================================================================
+# CABEÇALHO
+# ============================================================================
+
+echo "==============================================="
+echo "Início do processo: $(date +"%Y-%m-%d %H:%M:%S")"
+echo "Diretório base: $BASE_DIR"
+echo "Destino: $DESTINO"
+echo "Compressão: $COMPRESSAO"
+echo "Retenção: $RETENCAO_TIPO ($RETENCAO_VALOR)"
+echo "Tamanho máximo por parte: $TAMANHO_MAX"
+echo "==============================================="
+
+echo "" >> "$LOG"
+echo "======== EXECUÇÃO EM $(date +"%Y-%m-%d %H:%M:%S") ========" >> "$LOG"
+
+
+# ============================================================================
+# CONVERTE TAMANHO_MAX PARA BYTES
+# ============================================================================
+
+NUM=$(echo "$TAMANHO_MAX" | sed 's/[^0-9]//g')
+UNIDADE=$(echo "$TAMANHO_MAX" | sed 's/[0-9]//g' | tr '[:lower:]' '[:upper:]')
+
+case "$UNIDADE" in
+    G)  MAX_BYTES=$((NUM * 1024 * 1024 * 1024));;
+    M)  MAX_BYTES=$((NUM * 1024 * 1024));;
+    K)  MAX_BYTES=$((NUM * 1024));;
+    *)
+        echo "ERRO: Unidade inválida em TAMANHO_MAX ($TAMANHO_MAX)" | tee -a "$LOG"
+        exit 1
+        ;;
+esac
+
+
+# ============================================================================
+# FUNÇÃO: Verificar espaço livre
+# ============================================================================
+
+verificar_espaco() {
+    TAM_NECESSARIO=$1
+    DISPONIVEL=$(df -B1 "$DESTINO" | awk 'NR==2 {print $4}')
+
+    if [ "$DISPONIVEL" -lt "$TAM_NECESSARIO" ]; then
+        echo "ERRO: Espaço insuficiente no destino!" | tee -a "$LOG"
+        echo "Necessário: $(numfmt --to=iec $TAM_NECESSARIO)" | tee -a "$LOG"
+        echo "Disponível: $(numfmt --to=iec $DISPONIVEL)" | tee -a "$LOG"
+        return 1
+    fi
+
+    return 0
+}
+
+
+# ============================================================================
+# FUNÇÃO: Aplicar retenção POR SUBPASTA
+# ============================================================================
+
+aplicar_retencao() {
+
+    # percorre cada subpasta dentro de DESTINO
+    for SUB in "$DESTINO"/*; do
+        [ -d "$SUB" ] || continue   # ignora arquivos fora de pasta
+
+        case "$RETENCAO_TIPO" in
+
+            nenhum)
+                continue
+                ;;
+
+            quantidade)
+                TOTAL=$(ls -1t "$SUB"/*.tar* 2>/dev/null | wc -l)
+                if [ "$TOTAL" -gt "$RETENCAO_VALOR" ]; then
+                    REMOVER=$((TOTAL - RETENCAO_VALOR))
+                    echo "[$(basename "$SUB")] Removendo $REMOVER arquivos antigos..." | tee -a "$LOG"
+                    ls -1t "$SUB"/*.tar* | tail -n "$REMOVER" | while read F; do
+                        rm -f "$F"
+                        echo "Apagado: $F" >> "$LOG"
+                    done
+                fi
+                ;;
+
+            dias)
+                echo "[$(basename "$SUB")] Removendo arquivos mais antigos que $RETENCAO_VALOR dias..." | tee -a "$LOG"
+                find "$SUB" -type f -mtime +"$RETENCAO_VALOR" -name "*.tar*" -exec rm -f {} \; -exec echo "Apagado: {}" >> "$LOG" \;
+                ;;
+
+            *)
+                echo "RETENÇÃO: Tipo inválido ($RETENCAO_TIPO)" >> "$LOG"
+                ;;
+
+        esac
+    done
+}
+
+
+# ============================================================================
+# PROCESSAMENTO DAS PASTAS
+# ============================================================================
+
+DATA=$(date +"%Y-%m-%d")
+
+for DIR in "$BASE_DIR"/*; do
+    if [ -d "$DIR" ]; then
+
+        NOME=$(basename "$DIR")
+        EXT="tar"
+
+        [ "$COMPRESSAO" = "sim" ] && EXT="tar.gz"
+
+        # ---------------------------------------------------
+        # CRIAR SUBPASTA INDIVIDUAL PARA SAÍDA
+        # ---------------------------------------------------
+        OUTDIR="$DESTINO/$NOME"
+        mkdir -p "$OUTDIR"
+
+        TARFILE="$OUTDIR/${NOME}_${DATA}.${EXT}"
+
+        echo ""
+        echo ">>> Iniciando TAR: $NOME"
+
+
+        # ---------------------------------------------------
+        # VERIFICAR ESPAÇO
+        # ---------------------------------------------------
+        if [ "$VERIFICAR_ESPACO" = "sim" ]; then
+            TAM_DIR=$(du -sb "$DIR" | awk '{print $1}')
+            TAM_MIN=$((TAM_DIR * 2))
+            if ! verificar_espaco "$TAM_MIN"; then
+                continue
+            fi
+        fi
+
+
+        # ---------------------------------------------------
+        # CRIA TAR
+        # ---------------------------------------------------
+        if [ "$COMPRESSAO" = "sim" ]; then
+            tar -czf "$TARFILE" "$DIR" --warning=no-file-changed >> "$LOG" 2>&1
+        else
+            tar -cf "$TARFILE" "$DIR" --warning=no-file-changed >> "$LOG" 2>&1
+        fi
+
+        TAM_ARQ=$(stat -c%s "$TARFILE")
+
+        HUMANO_TAM=$(numfmt --to=iec "$TAM_ARQ")
+        HUMANO_MAX=$(numfmt --to=iec "$MAX_BYTES")
+
+        echo "Tamanho gerado: $HUMANO_TAM | Limite: $HUMANO_MAX" | tee -a "$LOG"
+
+
+        # ---------------------------------------------------
+        # SPLIT SE NECESSÁRIO
+        # ---------------------------------------------------
+        if [ "$TAM_ARQ" -gt "$MAX_BYTES" ]; then
+            if split -b "$TAMANHO_MAX" "$TARFILE" "${TARFILE}_part_" >> "$LOG" 2>&1; then
+                rm -f "$TARFILE"
+            else
+                echo "ERRO: Falha ao dividir $NOME" | tee -a "$LOG"
+            fi
+        fi
+
+
+        echo "OK: $NOME concluído." | tee -a "$LOG"
+
+    fi
+done
+
+
+# ============================================================================
+# APLICAR RETENÇÃO
+# ============================================================================
+aplicar_retencao
+
+
+echo ""
+echo "Processo finalizado."
+echo "Processo finalizado." >> "$LOG"
+
+
+# ============================================================================
+# ENCERRAMENTO
+# ============================================================================
+
+echo "==============================================="
+echo "Fim do processo: $(date +"%Y-%m-%d %H:%M:%S")"
+echo "Diretório base: $BASE_DIR"
+echo "Destino: $DESTINO"
+echo "Compressão: $COMPRESSAO"
+echo "Retenção: $RETENCAO_TIPO ($RETENCAO_VALOR)"
+echo "Tamanho máximo por parte: $TAMANHO_MAX"
+echo "==============================================="
+
+echo "" >> "$LOG"
+
