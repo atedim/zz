@@ -1,0 +1,256 @@
+#!/bin/bash
+###############################################################################
+# SCRIPT: zz_del_old
+#
+# DESCRICAO:
+#   Lista e remove arquivos antigos em um diretorio alvo e suas subpastas.
+#
+#   O criterio de corte segue a seguinte prioridade:
+#     1) DATA_CORTE fixa (formato DD/MM/YYYY)
+#     2) DAYS_OLD (quantidade de dias)
+#
+#   Se DATA_CORTE estiver definida, DAYS_OLD sera ignorado.
+#
+# MODOS DE EXECUCAO:
+#   log     | l  -> Apenas gera log com arquivos afetados (nao remove)
+#   silent  | s  -> Executa sem output no terminal
+#   verbose | v  -> Mostra todas as acoes no terminal
+#   help    | h  -> Exibe este help completo
+#
+# USO:
+#   ./zz_del_old [modo] [diretorio]
+#
+# EXEMPLOS:
+#   ./zz_del_old
+#   ./zz_del_old log
+#   ./zz_del_old v "/dados/backups"
+#
+# LOG:
+#   - Diretorio definido pela variavel LOG_BASE_DIR
+#   - Nome com timestamp DDMMAAAA_HHMM
+#
+# SEGURANCA:
+#   - Suporte total a espacos e caracteres especiais
+#   - Caminho de exclusao respeitado
+#   - Remove pastas vazias ao final
+#
+###############################################################################
+
+############################
+# VARIAVEIS CONFIGURAVEIS
+############################
+
+DEFAULT_TARGET_DIR="/dr/bkp/matriz/servers/8/rede/geral/scan"
+
+EXCLUDE_DIR="/dados/nao_apagar"
+
+# Data fixa de corte (DD/MM/YYYY)
+DATA_CORTE="01/01/2025"
+
+# Quantidade de dias (usado apenas se DATA_CORTE estiver vazia)
+#DAYS_OLD=731
+
+LOG_BASE_DIR="/var/log/clean_old_files"
+
+############################
+# VARIAVEIS INTERNAS
+############################
+
+MODE="normal"
+SHOW_OUTPUT=1
+USE_DATE_MODE=0
+CUT_EPOCH=""
+
+############################
+# FUNCOES
+############################
+
+show_help() {
+    echo "USO:"
+    echo "  $0 [log|l|silent|s|verbose|v|help|h] [diretorio]"
+    echo
+    echo "MODOS:"
+    echo "  log | l"
+    echo "      Apenas registra os arquivos que seriam afetados."
+    echo "      Nenhum arquivo ou pasta sera removido."
+    echo
+    echo "  silent | s"
+    echo "      Executa normalmente sem exibir output no terminal."
+    echo "      Apenas gera o arquivo de log."
+    echo
+    echo "  verbose | v"
+    echo "      Executa mostrando todas as acoes no terminal."
+    echo
+    echo "  help | h"
+    echo "      Mostra este help."
+    echo
+    echo "CRITERIO DE CORTE (prioridade):"
+    echo "  1) DATA_CORTE (DD/MM/YYYY) se definida"
+    echo "  2) DAYS_OLD (dias) se DATA_CORTE estiver vazia"
+    echo
+    echo "EXEMPLOS:"
+    echo "  $0"
+    echo "  $0 log"
+    echo "  $0 v /dados/backups"
+    echo
+    echo "LOG:"
+    echo "  Diretorio: $LOG_BASE_DIR"
+    echo "  Formato: clean_DDMMAAAA_HHMM.log"
+    echo
+    exit 0
+}
+
+log_msg() {
+    echo "$(date '+%d/%m/%Y %H:%M:%S') - $1" >> "$LOG_FILE"
+    [ "$SHOW_OUTPUT" -eq 1 ] && echo "$1"
+}
+
+validate_date() {
+    date -d "$1" "+%Y-%m-%d" >/dev/null 2>&1
+}
+
+process_file() {
+
+    FILE="$1"
+
+    if [[ "$FILE" == "$EXCLUDE_DIR"* ]]; then
+        log_msg "IGNORADO (excecao): $FILE"
+        return
+    fi
+
+    log_msg "ARQUIVO AFETADO: $FILE"
+
+    if [ "$MODE" != "log" ]; then
+        if rm -f -- "$FILE"; then
+            log_msg "REMOVIDO: $FILE"
+        else
+            log_msg "ERRO AO REMOVER: $FILE"
+        fi
+    fi
+}
+
+############################
+# TRATAMENTO DE PARAMETROS
+############################
+
+case "$1" in
+    log|l)
+        MODE="log"
+        ;;
+    silent|s)
+        MODE="silent"
+        SHOW_OUTPUT=0
+        ;;
+    verbose|v)
+        MODE="verbose"
+        ;;
+    help|h)
+        show_help
+        ;;
+    "")
+        ;;
+    *)
+        echo "Opcao invalida"
+        show_help
+        ;;
+esac
+
+[ -n "$1" ] && shift
+TARGET_DIR="${1:-$DEFAULT_TARGET_DIR}"
+
+############################
+# VALIDACOES INICIAIS
+############################
+
+[ ! -d "$TARGET_DIR" ] && { echo "Diretorio alvo invalido"; exit 1; }
+mkdir -p "$LOG_BASE_DIR" || { echo "Falha ao criar log"; exit 1; }
+
+############################
+# LOG
+############################
+
+TIMESTAMP="$(date +%d%m%Y_%H%M)"
+LOG_FILE="$LOG_BASE_DIR/clean_${TIMESTAMP}.log"
+
+############################
+# DEFINIR MODO DE CORTE
+############################
+
+if [ -n "$DATA_CORTE" ]; then
+
+    # Converte DD/MM/YYYY -> YYYY-MM-DD
+    DATA_FMT="$(echo "$DATA_CORTE" | awk -F'/' '{print $3 "-" $2 "-" $1}')"
+
+    if validate_date "$DATA_FMT"; then
+
+        CUT_EPOCH=$(date -d "$DATA_FMT" +%s)
+        NOW_EPOCH=$(date +%s)
+        MIN_EPOCH=$(date -d "1970-01-01" +%s)
+
+        if [ "$CUT_EPOCH" -gt "$NOW_EPOCH" ]; then
+            log_msg "ERRO: DATA_CORTE esta no futuro ($DATA_CORTE)"
+            exit 1
+        fi
+
+        if [ "$CUT_EPOCH" -lt "$MIN_EPOCH" ]; then
+            log_msg "ERRO: DATA_CORTE anterior a 1970 ($DATA_CORTE)"
+            exit 1
+        fi
+
+        USE_DATE_MODE=1
+        log_msg "Modo de corte por data fixa: $DATA_CORTE (ISO: $DATA_FMT)"
+
+    else
+        log_msg "ERRO: DATA_CORTE invalida (esperado DD/MM/YYYY)"
+        exit 1
+    fi
+
+else
+    log_msg "Modo de corte por dias: $DAYS_OLD"
+fi
+
+############################
+# INICIO
+############################
+
+log_msg "Inicio da execucao"
+log_msg "Diretorio alvo: $TARGET_DIR"
+log_msg "Diretorio excluido: $EXCLUDE_DIR"
+log_msg "Modo: $MODE"
+
+############################
+# PROCESSAMENTO
+############################
+
+if [ "$USE_DATE_MODE" -eq 1 ]; then
+
+    find "$TARGET_DIR" -type f -print0 | while IFS= read -r -d '' FILE; do
+        FILE_EPOCH=$(stat -c %Y "$FILE")
+        [ "$FILE_EPOCH" -lt "$CUT_EPOCH" ] && process_file "$FILE"
+    done
+
+else
+
+    find "$TARGET_DIR" -type f -mtime +"$DAYS_OLD" -print0 | while IFS= read -r -d '' FILE; do
+        process_file "$FILE"
+    done
+
+fi
+
+############################
+# REMOVER PASTAS VAZIAS
+############################
+
+find "$TARGET_DIR" -type d -empty -print0 | while IFS= read -r -d '' DIR; do
+    [[ "$DIR" == "$EXCLUDE_DIR"* ]] && continue
+    rmdir -- "$DIR" 2>/dev/null && log_msg "PASTA VAZIA REMOVIDA: $DIR"
+done
+
+############################
+# FINAL
+############################
+
+log_msg "Fim da execucao"
+[ "$MODE" != "silent" ] && echo "Log gerado em: $LOG_FILE"
+
+exit 0

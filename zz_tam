@@ -1,0 +1,99 @@
+#!/bin/bash
+###############################################################################
+# SCRIPT: zz_sum_log_space.sh
+#
+# DESCRICAO:
+#   Processa arquivo de log contendo linhas no formato:
+#   DATA HORA - ARQUIVO AFETADO: /caminho/do/arquivo
+#
+#   Totaliza espaco em disco por pasta ate um nivel configuravel
+#
+# CONFIGURACAO IMPORTANTE:
+#   NIVEL_AGRUPAMENTO -> quantidade de niveis de diretorio a considerar
+#
+#   Exemplo:
+#   NIVEL_AGRUPAMENTO=9
+#   /a/b/c/d/e/f/g/h/i/j/k.txt
+#   Agrupa em: /a/b/c/d/e/f/g/h/i
+###############################################################################
+
+LOG_FILE="$1"
+
+# ===== CONFIGURACAO =====
+NIVEL_AGRUPAMENTO=10
+# =======================
+
+if [ -z "$LOG_FILE" ]; then
+    echo "ERRO: informe o arquivo de log"
+    echo "USO: $0 arquivo.log"
+    exit 1
+fi
+
+if [ ! -f "$LOG_FILE" ]; then
+    echo "ERRO: arquivo nao encontrado: $LOG_FILE"
+    exit 1
+fi
+
+declare -A DIR_SIZE
+TOTAL_BYTES=0
+
+# Extrai caminho ate o nivel configurado
+get_dir_nivel() {
+    local FULLPATH="$1"
+    local NIVEL="$2"
+
+    echo "$FULLPATH" | awk -F'/' -v n="$NIVEL" '{
+        out=""
+        for (i=1; i<=n && i<=NF; i++) {
+            if ($i != "") out=out "/" $i
+        }
+        print out
+    }'
+}
+
+while IFS= read -r LINE; do
+    case "$LINE" in
+        *"ARQUIVO AFETADO:"*)
+            FILE="${LINE#*: }"
+
+            if [ -f "$FILE" ]; then
+                SIZE=$(stat -c %s "$FILE" 2>/dev/null)
+
+                DIR_AGRUPADO=$(get_dir_nivel "$FILE" "$NIVEL_AGRUPAMENTO")
+
+                DIR_SIZE["$DIR_AGRUPADO"]=$(( ${DIR_SIZE["$DIR_AGRUPADO"]:-0} + SIZE ))
+                TOTAL_BYTES=$(( TOTAL_BYTES + SIZE ))
+            fi
+        ;;
+    esac
+done < "$LOG_FILE"
+
+# Converte bytes para formato humano
+human() {
+    local B=$1
+    local VALUE=$B
+    local UNIT="B"
+
+    for U in KB MB GB TB; do
+        if [ "$VALUE" -ge 1024 ]; then
+            VALUE=$(( VALUE / 1024 ))
+            UNIT=$U
+        else
+            break
+        fi
+    done
+
+    echo "${VALUE}${UNIT}"
+}
+
+echo "=========================================================="
+echo "SUMARIZACAO POR PASTA (ATE $NIVEL_AGRUPAMENTO NIVEIS)"
+echo "=========================================================="
+
+for DIR in "${!DIR_SIZE[@]}"; do
+    echo "$(human "${DIR_SIZE[$DIR]}")  -  $DIR"
+done | sort -h
+
+echo "----------------------------------------------------------"
+echo "TOTAL GERAL: $(human "$TOTAL_BYTES")"
+echo "----------------------------------------------------------"
