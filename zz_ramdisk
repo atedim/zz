@@ -131,7 +131,13 @@ download_com_retry() {
 
         log_info "Tentativa $tentativa de $retry (principal)"
 
-        if wget --timeout=15 --tries=2 -O "$arquivo_tgz" "$url_tgz"; then
+        if [ "$modo_silent" = "sim" ]; then
+            wget -q --timeout=15 --tries=2 -O "$arquivo_tgz" "$url_tgz" >> "$log" 2>&1
+        else
+            wget --timeout=15 --tries=2 -O "$arquivo_tgz" "$url_tgz"
+        fi
+
+        if [ $? -eq 0 ]; then
             sucesso="sim"
             break
         fi
@@ -150,7 +156,13 @@ download_com_retry() {
 
             log_info "Tentativa $tentativa de $retry (backup)"
 
-            if wget --timeout=15 --tries=2 -O "$arquivo_tgz" "$url_tgz_backup"; then
+            if [ "$modo_silent" = "sim" ]; then
+                wget -q --timeout=15 --tries=2 -O "$arquivo_tgz" "$url_tgz_backup" >> "$log" 2>&1
+            else
+                wget --timeout=15 --tries=2 -O "$arquivo_tgz" "$url_tgz_backup"
+            fi
+
+            if [ $? -eq 0 ]; then
                 sucesso="sim"
                 break
             fi
