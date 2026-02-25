@@ -1,0 +1,352 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+#################################
+# CONFIGURAÇÕES
+#################################
+
+diretorio_padrao="$HOME/Documents"
+tamanho_minimo="+1M"
+
+parallel_jobs="$(( $(nproc) / 2 ))"
+[ "$parallel_jobs" -lt 1 ] && parallel_jobs=1
+
+mem_sort="50%"
+hash_parcial_bytes="4M"
+
+log="/var/log/zz_dupfind.log"
+relatorio="/var/log/zz_dupfind_result_$(date +%Y%m%d_%H%M%S).txt"
+
+modo_delete=0
+
+#################################
+# FUNÇÕES
+#################################
+
+log_info() {
+    echo "$(date '+%F %T') [INFO] $1" | tee -a "$log"
+}
+
+tempo_inicio() { date +%s; }
+tempo_fim() { echo $(( $(date +%s) - $1 )); }
+
+#################################
+# PARÂMETROS
+#################################
+
+for arg in "$@"; do
+    case "$arg" in
+        --delete) modo_delete=1 ;;
+        *) diretorio="$arg" ;;
+    esac
+done
+
+diretorio="${diretorio:-$diretorio_padrao}"
+[ -d "$diretorio" ] || { echo "Diretório inválido"; exit 1; }
+
+tempo_execucao_inicio=$(date +%s)
+
+#################################
+# TMP
+#################################
+
+tmp_base="$(mktemp -d)"
+trap 'rm -rf "$tmp_base"' EXIT
+
+tmp_sizes="$tmp_base/sizes"
+tmp_sorted="$tmp_base/sorted"
+tmp_same="$tmp_base/same"
+tmp_partial="$tmp_base/partial"
+tmp_partial_sorted="$tmp_base/partial_sorted"
+tmp_full="$tmp_base/full"
+tmp_full_sorted="$tmp_base/full_sorted"
+tmp_ranking="$tmp_base/ranking"
+
+#################################
+# INÍCIO
+#################################
+
+log_info "Diretório: $diretorio"
+log_info "Paralelismo: $parallel_jobs"
+log_info "Relatório final: $relatorio"
+
+#################################
+# 1 - LISTA
+#################################
+
+log_info "Gerando lista..."
+t0=$(tempo_inicio)
+
+find "$diretorio" -type f -size "$tamanho_minimo" -print0 |
+while IFS= read -r -d '' file; do
+    size=$(stat -c%s "$file" 2>/dev/null || true)
+    [ -n "$size" ] && printf "%s\t%s\n" "$size" "$file"
+done > "$tmp_sizes"
+
+total_arquivos=$(wc -l < "$tmp_sizes")
+log_info "Arquivos analisados: $total_arquivos"
+log_info "Tempo LISTA: $(tempo_fim "$t0")s"
+
+[ "$total_arquivos" -eq 0 ] && exit 0
+
+#################################
+# 2 - SORT TAMANHO
+#################################
+
+log_info "Ordenando por tamanho..."
+t0=$(tempo_inicio)
+
+sort -n -k1,1 --parallel="$(nproc)" -S "$mem_sort" \
+"$tmp_sizes" > "$tmp_sorted"
+
+log_info "Tempo SORT: $(tempo_fim "$t0")s"
+
+#################################
+# 3 - FILTRA TAMANHO DUP
+#################################
+
+log_info "Filtrando tamanhos repetidos..."
+t0=$(tempo_inicio)
+
+awk -F'\t' '
+{
+    count[$1]++
+    lines[$1] = lines[$1] $0 "\n"
+}
+END {
+    for (s in count)
+        if (count[s] > 1)
+            printf "%s", lines[s]
+}
+' "$tmp_sorted" > "$tmp_same"
+
+candidatos=$(wc -l < "$tmp_same")
+log_info "Arquivos com tamanho repetido: $candidatos"
+log_info "Tempo FILTRO TAMANHO: $(tempo_fim "$t0")s"
+
+[ "$candidatos" -eq 0 ] && exit 0
+
+#################################
+# 4 - HASH PARCIAL
+#################################
+
+log_info "Calculando hash parcial..."
+t0=$(tempo_inicio)
+
+jobcount=0
+> "$tmp_partial"
+
+while IFS=$'\t' read -r size file; do
+    {
+        h=$(head -c "$hash_parcial_bytes" "$file" 2>/dev/null | sha256sum | cut -d' ' -f1)
+        [ -n "$h" ] && printf "%s\t%s\n" "$h" "$file"
+    } >> "$tmp_partial" &
+
+    jobcount=$((jobcount+1))
+    if [ "$jobcount" -ge "$parallel_jobs" ]; then
+        wait
+        jobcount=0
+    fi
+
+done < "$tmp_same"
+
+wait
+
+parciais=$(wc -l < "$tmp_partial")
+log_info "Hashes parciais gerados: $parciais"
+log_info "Tempo HASH PARCIAL: $(tempo_fim "$t0")s"
+
+[ "$parciais" -eq 0 ] && exit 0
+
+#################################
+# 5 - FILTRA HASH PARCIAL DUP
+#################################
+
+log_info "Filtrando hash parcial duplicado..."
+t0=$(tempo_inicio)
+
+sort -k1,1 --parallel="$(nproc)" -S "$mem_sort" \
+"$tmp_partial" > "$tmp_partial_sorted"
+
+awk -F'\t' '
+{
+    count[$1]++
+    lines[$1] = lines[$1] $0 "\n"
+}
+END {
+    for (h in count)
+        if (count[h] > 1)
+            printf "%s", lines[h]
+}
+' "$tmp_partial_sorted" > "$tmp_same"
+
+candidatos=$(wc -l < "$tmp_same")
+log_info "Candidatos após hash parcial: $candidatos"
+log_info "Tempo FILTRO HASH PARCIAL: $(tempo_fim "$t0")s"
+
+[ "$candidatos" -eq 0 ] && exit 0
+
+#################################
+# 6 - HASH COMPLETO
+#################################
+
+log_info "Calculando hash completo..."
+t0=$(tempo_inicio)
+
+jobcount=0
+> "$tmp_full"
+
+while IFS=$'\t' read -r hash file; do
+    {
+        h=$(sha256sum "$file" 2>/dev/null | cut -d' ' -f1)
+        [ -n "$h" ] && printf "%s\t%s\n" "$h" "$file"
+    } >> "$tmp_full" &
+
+    jobcount=$((jobcount+1))
+    if [ "$jobcount" -ge "$parallel_jobs" ]; then
+        wait
+        jobcount=0
+    fi
+
+done < "$tmp_same"
+
+wait
+
+completos=$(wc -l < "$tmp_full")
+log_info "Hashes completos gerados: $completos"
+log_info "Tempo HASH COMPLETO: $(tempo_fim "$t0")s"
+
+[ "$completos" -eq 0 ] && exit 0
+
+#################################
+# 7 - AGRUPAMENTO FINAL (CORRIGIDO)
+#################################
+
+log_info "Agrupando duplicados finais..."
+t0=$(tempo_inicio)
+
+sort -k1,1 --parallel="$(nproc)" -S "$mem_sort" \
+"$tmp_full" > "$tmp_full_sorted"
+
+> "$tmp_ranking"
+
+desperdicio_total=0
+tamanho_total_analisado=0
+total_grupos=0
+total_duplicados=0
+
+while IFS=$'\t' read -r hash file; do
+    tamanho_total_analisado=$((tamanho_total_analisado + $(stat -c%s "$file")))
+done < "$tmp_full_sorted"
+
+# CORREÇÃO: sem subshell
+while read -r hash; do
+
+    arquivos=$(awk -F'\t' -v h="$hash" '$1==h {print $2}' "$tmp_full_sorted")
+
+    qtd_total=$(echo "$arquivos" | wc -l)
+    repeticoes=$((qtd_total - 1))
+    tamanho_unico=$(stat -c%s "$(echo "$arquivos" | head -n1)")
+    desperdicio_grupo=$((tamanho_unico * repeticoes))
+
+    echo "${desperdicio_grupo}|${hash}" >> "$tmp_ranking"
+
+    desperdicio_total=$((desperdicio_total + desperdicio_grupo))
+    total_grupos=$((total_grupos + 1))
+    total_duplicados=$((total_duplicados + qtd_total))
+
+done < <(
+    awk -F'\t' '
+    {
+        count[$1]++
+    }
+    END {
+        for (h in count)
+            if (count[h]>1)
+                print h
+    }
+    ' "$tmp_full_sorted"
+)
+
+sort -nr -t'|' -k1,1 "$tmp_ranking" > "$tmp_ranking.sorted"
+
+{
+echo "RELATÓRIO DE DUPLICADOS"
+echo "Data: $(date)"
+echo "Diretório: $diretorio"
+echo "===================================================="
+echo
+} > "$relatorio"
+
+while IFS='|' read -r desperdicio hash; do
+
+    arquivos=$(awk -F'\t' -v h="$hash" '$1==h {print $2}' "$tmp_full_sorted")
+
+    qtd_total=$(echo "$arquivos" | wc -l)
+    repeticoes=$((qtd_total - 1))
+    tamanho_unico=$(stat -c%s "$(echo "$arquivos" | head -n1)")
+
+    tamanho_unico_mb=$((tamanho_unico / 1024 / 1024))
+    desperdicio_mb=$((desperdicio / 1024 / 1024))
+
+    {
+        echo "HASH: $hash"
+        echo
+        echo "$arquivos"
+        echo
+        echo "Quantidade de ocorrências: $qtd_total"
+        echo "Quantidade de repetições: $repeticoes"
+        echo "Tamanho único do arquivo: ${tamanho_unico_mb} Mb"
+        echo "Desperdício deste grupo: ${desperdicio_mb} Mb"
+        echo "--------------------------------------------------"
+        echo
+    } >> "$relatorio"
+
+done < "$tmp_ranking.sorted"
+
+desperdicio_total_mb=$((desperdicio_total / 1024 / 1024))
+percentual=0
+
+if [ "$tamanho_total_analisado" -gt 0 ]; then
+    percentual=$((desperdicio_total * 100 / tamanho_total_analisado))
+fi
+
+{
+echo
+echo "===================================================="
+echo "RESUMO GERAL"
+echo "Desperdício total: ${desperdicio_total_mb} Mb"
+echo "Percentual de desperdício: ${percentual}%"
+echo "Total de arquivos duplicados encontrados: ${total_duplicados}"
+echo "===================================================="
+} >> "$relatorio"
+
+log_info "Tempo AGRUPAMENTO: $(tempo_fim "$t0")s"
+log_info "Relatório salvo em: $relatorio"
+
+#################################
+# RESUMO FINAL NO LOG
+#################################
+
+tempo_execucao_fim=$(date +%s)
+tempo_total_execucao=$((tempo_execucao_fim - tempo_execucao_inicio))
+
+{
+echo "===================================================="
+echo "RESUMO FINAL DA EXECUÇÃO"
+echo
+echo "Arquivos analisados: $total_arquivos"
+echo "Arquivos com tamanho repetido: $candidatos"
+echo "Grupos duplicados: $total_grupos"
+echo "Total de arquivos duplicados: $total_duplicados"
+echo "Desperdício total: ${desperdicio_total_mb} Mb"
+echo "Percentual de desperdício: ${percentual}%"
+echo
+echo "Tempo total de execução: ${tempo_total_execucao}s"
+echo "===================================================="
+} >> "$log"
+
+log_info "Processo concluído."
