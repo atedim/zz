@@ -4,18 +4,10 @@
 #  ZZ_RAMLOADER - Carrega scripts em RAM Disk (tmpfs)
 #############################################################
 
-#########################
-# PROTEÇÃO ROOT
-#########################
-
 [ "$EUID" -ne 0 ] && {
     echo "Este script precisa ser executado como root."
     exit 1
 }
-
-#########################
-# PARÂMETROS
-#########################
 
 modo_silent="nao"
 modo_debug="nao"
@@ -26,36 +18,7 @@ for arg in "$@"; do
     [ "$arg" = "-debug" ] && modo_debug="sim"
 done
 
-#########################
-# CONTROLE DE ERROS
-#########################
-
 set -Ee
-
-cleanup_on_error() {
-
-    codigo="$1"
-    linha="$2"
-    comando="$3"
-
-    if [ "$modo_debug" = "sim" ]; then
-        log_info "DEBUG: Código erro: $codigo"
-        log_info "DEBUG: Linha: $linha"
-        log_info "DEBUG: Comando: $comando"
-    fi
-
-    log_info "Erro detectado. Executando limpeza automática..."
-
-    if mountpoint -q "$ponto_montagem"; then
-        tipo_fs=$(df -T "$ponto_montagem" | awk 'NR==2 {print $2}')
-        if [ "$tipo_fs" = "tmpfs" ]; then
-            log_info "Desmontando RAM Disk devido a erro..."
-            umount "$ponto_montagem"
-        fi
-    fi
-
-    exit 1
-}
 
 trap 'cleanup_on_error $? $LINENO "$BASH_COMMAND"' ERR
 
@@ -82,71 +45,67 @@ log="/var/log/zz_ramloader.log"
 #########################
 
 log_info() {
-
-    mensagem="$(date '+%F %T') [INFO] $1"
-
-    if [ "$modo_silent" = "sim" ]; then
-        echo "$mensagem" >> "$log"
-    else
-        echo "$mensagem" | tee -a "$log"
-    fi
+    msg="$(date '+%F %T') [INFO] $1"
+    [ "$modo_silent" = "sim" ] && echo "$msg" >> "$log" || echo "$msg" | tee -a "$log"
 }
 
 log_erro() {
+    msg="$(date '+%F %T') [ERRO] $1"
+    [ "$modo_silent" = "sim" ] && echo "$msg" >> "$log" || echo "$msg" | tee -a "$log"
+    exit 1
+}
 
-    mensagem="$(date '+%F %T') [ERRO] $1"
+cleanup_on_error() {
 
-    if [ "$modo_silent" = "sim" ]; then
-        echo "$mensagem" >> "$log"
-    else
-        echo "$mensagem" | tee -a "$log"
+    if [ "$modo_debug" = "sim" ]; then
+        log_info "DEBUG: Código: $1 Linha: $2 Comando: $3"
+    fi
+
+    log_info "Erro detectado. Limpando..."
+
+    if mountpoint -q "$ponto_montagem"; then
+        umount "$ponto_montagem"
     fi
 
     exit 1
 }
 
 #########################
-# DEPENDÊNCIAS
+# VERIFICA RAM DISPONÍVEL
 #########################
 
-verifica_dependencias() {
+verifica_memoria_disponivel() {
 
-    log_info "Verificando dependências..."
+    log_info "Verificando memória RAM disponível..."
 
-    for cmd in mount umount wget tar df awk sha256sum mountpoint rm mkdir sleep tr grep; do
-        command -v "$cmd" >/dev/null 2>&1 || log_erro "Dependência '$cmd' não encontrada."
-    done
+    ram_disponivel_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+    ram_disponivel_bytes=$((ram_disponivel_kb * 1024))
 
-    log_info "Dependências OK."
+    tamanho_bytes=$(numfmt --from=iec "$tamanho_ramdisk")
+
+    log_info "RAM disponível: $ram_disponivel_bytes bytes"
+    log_info "RAM necessária para tmpfs: $tamanho_bytes bytes"
+
+    if [ "$ram_disponivel_bytes" -lt "$tamanho_bytes" ]; then
+        log_erro "Memória insuficiente para montar RAM Disk."
+    fi
 }
 
 #########################
-# LIMPEZA INICIAL
+# LIMPEZA SEGURA
 #########################
 
 limpa_ambiente_inicial() {
 
-    log_info "Verificando ambiente inicial..."
-
     if mountpoint -q "$ponto_montagem"; then
-
-        tipo_fs=$(df -T "$ponto_montagem" | awk 'NR==2 {print $2}')
-
-        if [ "$tipo_fs" = "tmpfs" ]; then
-            log_info "RAM Disk detectado. Desmontando..."
-            umount "$ponto_montagem"
-        else
-            log_erro "Existe algo montado que NÃO é tmpfs."
-        fi
+        umount "$ponto_montagem"
     fi
 
-    if [ -d "$ponto_montagem" ]; then
-        log_info "Limpando diretório $ponto_montagem"
-        rm -rf "$ponto_montagem"/*
+    if [ -n "$ponto_montagem" ] && [ -d "$ponto_montagem" ]; then
+        rm -rf "${ponto_montagem:?}"/*
     fi
 
     mkdir -p "$ponto_montagem"
-    log_info "Ambiente limpo."
 }
 
 #########################
@@ -154,19 +113,11 @@ limpa_ambiente_inicial() {
 #########################
 
 monta_ramdisk() {
-
-    log_info "Montando RAM Disk $tamanho_ramdisk em $ponto_montagem"
     mount -t tmpfs -o size="$tamanho_ramdisk" tmpfs "$ponto_montagem"
 }
 
-valida_tmpfs() {
-
-    tipo_fs=$(df -T "$ponto_montagem" | awk 'NR==2 {print $2}')
-    [ "$tipo_fs" = "tmpfs" ] || log_erro "Destino não é tmpfs."
-}
-
 #########################
-# DOWNLOAD COM RETRY + FAILOVER
+# DOWNLOAD
 #########################
 
 download_com_retry() {
@@ -180,7 +131,7 @@ download_com_retry() {
 
         log_info "Tentativa $tentativa de $retry (principal)"
 
-        if wget -O "$arquivo_tgz" "$url_tgz"; then
+        if wget --timeout=15 --tries=2 -O "$arquivo_tgz" "$url_tgz"; then
             sucesso="sim"
             break
         fi
@@ -199,7 +150,7 @@ download_com_retry() {
 
             log_info "Tentativa $tentativa de $retry (backup)"
 
-            if wget -O "$arquivo_tgz" "$url_tgz_backup"; then
+            if wget --timeout=15 --tries=2 -O "$arquivo_tgz" "$url_tgz_backup"; then
                 sucesso="sim"
                 break
             fi
@@ -213,26 +164,22 @@ download_com_retry() {
         log_erro "Falha no download após todas tentativas."
     fi
 }
+
 #########################
-# VALIDA HASH (ROBUSTO)
+# VALIDA HASH
 #########################
 
 valida_hash() {
 
     log_info "Validando SHA256..."
 
-    # Normaliza hash esperado
     sha256_normalizado=$(echo "$sha256_esperado" | tr '[:upper:]' '[:lower:]')
 
-    # Valida formato do hash esperado
     if ! echo "$sha256_normalizado" | grep -qE '^[0-9a-f]{64}$'; then
         log_erro "SHA256 informado é inválido ou mal formatado."
     fi
 
-    # Calcula e normaliza hash do arquivo
-    sha256_calculado=$(sha256sum "$arquivo_tgz" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
-
-    if [ "$sha256_calculado" != "$sha256_normalizado" ]; then
+    if ! echo "$sha256_normalizado  $arquivo_tgz" | sha256sum -c - >/dev/null 2>&1; then
         rm -f "$arquivo_tgz"
         log_erro "SHA256 inválido."
     fi
@@ -241,15 +188,37 @@ valida_hash() {
 }
 
 #########################
+# VERIFICA TAMANHO REAL
+#########################
+
+verifica_tamanho_real() {
+
+    log_info "Verificando tamanho real para extração..."
+
+    tamanho_tgz=$(stat -c%s "$arquivo_tgz")
+
+    tamanho_expandido=$(tar -tzvf "$arquivo_tgz" | awk '{s+=$3} END {print s}')
+
+    tamanho_total=$((tamanho_tgz + tamanho_expandido))
+
+    tamanho_tmpfs=$(df -B1 "$ponto_montagem" | awk 'NR==2 {print $2}')
+
+    log_info "TGZ: $tamanho_tgz bytes"
+    log_info "Expandido: $tamanho_expandido bytes"
+    log_info "Total necessário: $tamanho_total bytes"
+    log_info "Tamanho RAM Disk: $tamanho_tmpfs bytes"
+
+    if [ "$tamanho_total" -gt "$tamanho_tmpfs" ]; then
+        log_erro "RAM Disk insuficiente para extração."
+    fi
+}
+
+#########################
 # EXTRAÇÃO
 #########################
 
 extrai_tgz() {
-
-    log_info "Extraindo pacote..."
     tar -xzf "$arquivo_tgz" -C "$ponto_montagem"
-
-    log_info "Removendo arquivo compactado..."
     rm -f "$arquivo_tgz"
 }
 
@@ -257,12 +226,13 @@ extrai_tgz() {
 # EXECUÇÃO
 #########################
 
-verifica_dependencias
+verifica_memoria_disponivel
 limpa_ambiente_inicial
 monta_ramdisk
-valida_tmpfs
 download_com_retry
 valida_hash
+verifica_tamanho_real
 extrai_tgz
 
 log_info "Processo concluído com sucesso."
+
