@@ -11,11 +11,13 @@
 
 modo_silent="nao"
 modo_debug="nao"
+modo_umount="nao"
 
 for arg in "$@"; do
     [ "$arg" = "-s" ] && modo_silent="sim"
     [ "$arg" = "-silent" ] && modo_silent="sim"
     [ "$arg" = "-debug" ] && modo_debug="sim"
+    [ "$arg" = "-umount" ] && modo_umount="sim"
 done
 
 set -Ee
@@ -68,6 +70,31 @@ cleanup_on_error() {
     fi
 
     exit 1
+}
+
+#########################
+# DESMONTAGEM SEGURA
+#########################
+
+executa_umount_seguro() {
+
+    log_info "Solicitada desmontagem manual (-umount)."
+
+    if mountpoint -q "$ponto_montagem"; then
+
+        sync
+
+        if umount "$ponto_montagem"; then
+            log_info "RAM Disk desmontado com sucesso."
+        else
+            log_erro "Falha ao desmontar RAM Disk."
+        fi
+
+    else
+        log_info "RAM Disk não está montado."
+    fi
+
+    exit 0
 }
 
 #########################
@@ -238,6 +265,9 @@ extrai_tgz() {
 # EXECUÇÃO
 #########################
 
+# Se for solicitado apenas desmontar
+[ "$modo_umount" = "sim" ] && executa_umount_seguro
+
 verifica_memoria_disponivel
 limpa_ambiente_inicial
 monta_ramdisk
@@ -247,4 +277,3 @@ verifica_tamanho_real
 extrai_tgz
 
 log_info "Processo concluído com sucesso."
-
