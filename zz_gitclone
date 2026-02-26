@@ -1,0 +1,107 @@
+#!/bin/bash
+
+#################################################
+# CONFIGURAÇÕES
+#################################################
+
+repo_url="https://github.com/atedim/zz.git"
+destino_base="/dados/git"
+branch="main"
+
+usar_log="nao"
+log_file="/var/log/zz_gitclone.log"
+
+lock_file="/tmp/zz_gitclone.lock"
+
+silent="nao"
+
+#################################################
+# PARÂMETROS
+#################################################
+
+if [ "$1" = "-s" ] || [ "$1" = "--silent" ]; then
+    silent="sim"
+fi
+
+#################################################
+# FUNÇÕES
+#################################################
+
+saida() {
+    if [ "$silent" != "sim" ]; then
+        echo "$1"
+    fi
+    if [ "$usar_log" = "sim" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$log_file"
+    fi
+}
+
+erro() {
+    echo "ERRO: $1"
+    if [ "$usar_log" = "sim" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - ERRO: $1" >> "$log_file"
+    fi
+    rm -f "$lock_file"
+    exit 1
+}
+
+#################################################
+# LOCK (EVITA EXECUÇÃO DUPLA)
+#################################################
+
+if [ -f "$lock_file" ]; then
+    exit 0
+fi
+
+touch "$lock_file"
+
+#################################################
+# PROCESSAMENTO
+#################################################
+
+[ -d "$destino_base" ] || erro "Destino base não existe"
+
+repo_nome=$(basename "$repo_url" .git)
+repo_dir="$destino_base/$repo_nome"
+
+#################################################
+# CLONE SE NÃO EXISTIR
+#################################################
+
+if [ ! -d "$repo_dir" ]; then
+
+    saida "Repositório não existe. Clonando..."
+    cd "$destino_base" || erro "Falha ao acessar destino"
+
+    /usr/bin/git clone -b "$branch" "$repo_url" || erro "Falha no clone"
+
+    saida "Clone concluído."
+    rm -f "$lock_file"
+    exit 0
+fi
+
+#################################################
+# SE EXISTE → SINCRONIZA MODO ESPELHO
+#################################################
+
+if [ ! -d "$repo_dir/.git" ]; then
+    erro "Diretório existe mas não é um repositório Git"
+fi
+
+saida "Sincronizando modo espelho..."
+
+cd "$repo_dir" || erro "Falha ao acessar repo"
+
+# Atualiza referência remota
+/usr/bin/git fetch origin || erro "Falha no fetch"
+
+# Força igualar ao remoto
+/usr/bin/git reset --hard origin/$branch || erro "Falha no reset"
+
+# Remove arquivos não versionados
+/usr/bin/git clean -fd || erro "Falha no clean"
+
+saida "Sincronização concluída."
+
+rm -f "$lock_file"
+exit 0
