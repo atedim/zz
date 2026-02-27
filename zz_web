@@ -1,0 +1,74 @@
+#!/bin/bash
+
+HTPASSWD="/etc/nginx/.htpasswd"
+SERVICE="nginx"
+
+case "$1" in
+
+    -off)
+        echo "Parando e desabilitando $SERVICE..."
+        systemctl stop $SERVICE
+        systemctl disable $SERVICE
+        ;;
+
+    -start)
+        echo "Iniciando $SERVICE..."
+        systemctl start $SERVICE
+        ;;
+
+    -on)
+        echo "Ativando e iniciando $SERVICE..."
+        systemctl enable $SERVICE
+        systemctl start $SERVICE
+        ;;
+
+    -pass)
+        read -p "Usuário: " USER
+        if grep -q "^$USER:" "$HTPASSWD"; then
+            htpasswd "$HTPASSWD" "$USER"
+            echo "Senha alterada."
+        else
+            echo "Usuário não existe."
+        fi
+        ;;
+
+    -add)
+        read -p "Novo usuário: " USER
+        if grep -q "^$USER:" "$HTPASSWD" 2>/dev/null; then
+            echo "Usuário já existe."
+        else
+            htpasswd "$HTPASSWD" "$USER"
+            echo "Usuário adicionado."
+        fi
+        ;;
+
+    -del)
+        read -p "Usuário para remover: " USER
+        if grep -q "^$USER:" "$HTPASSWD"; then
+            htpasswd -D "$HTPASSWD" "$USER"
+            echo "Usuário removido."
+        else
+            echo "Usuário não encontrado."
+        fi
+        ;;
+
+    -list)
+        echo "Usuários cadastrados:"
+        if [ -f "$HTPASSWD" ]; then
+            cut -d: -f1 "$HTPASSWD"
+        else
+            echo "Nenhum arquivo de usuários encontrado."
+        fi
+        ;;
+
+    *)
+        echo "Uso:"
+        echo "zz_web -off    → Para e desabilita nginx"
+        echo "zz_web -start  → Inicia nginx"
+        echo "zz_web -on     → Ativa e inicia nginx"
+        echo "zz_web -pass   → Troca senha de usuário"
+        echo "zz_web -add    → Adiciona usuário"
+        echo "zz_web -del    → Remove usuário"
+        echo "zz_web -list   → Lista usuários"
+        ;;
+esac
