@@ -1,0 +1,316 @@
+o#!/bin/bash
+
+# =====================================================================
+#  zz_mountSSH v1.0
+# =====================================================================
+#
+#  AUTOR:
+#  ---------------------------------------------------------------------
+#  Projeto zz_* - Montagem remota controlada via SSHFS
+#
+#  FINALIDADE:
+#  ---------------------------------------------------------------------
+#  Script profissional para:
+#
+#    • Montar diretórios remotos via SSHFS
+#    • Desmontar ponto específico
+#    • Desmontar TODOS os mounts originados de um IP específico
+#    • Executar desmontagem normal ou ultra agressiva
+#
+# =====================================================================
+#  MODOS DE OPERAÇÃO
+# =====================================================================
+#
+#  1) MONTAGEM REMOTA
+#     ---------------------------------------------------------------
+#     Pode operar de duas formas:
+#
+#       A) Via variáveis internas:
+#          HOST_VAR
+#          REMOTE_VAR
+#          TIPO_VAR      (ro|rw)
+#          USER_VAR
+#          PASS_VAR
+#          LOCAL_VAR
+#
+#       B) Via parâmetros:
+#          zz_mountSSH host remoto ro|rw usuario senha ponto_local
+#
+#     Fluxo:
+#       • Valida parâmetros
+#       • Verifica dependências
+#       • Cria ponto local se necessário
+#       • Testa conectividade SSH
+#       • Evita dupla montagem
+#       • Executa sshfs
+#       • Valida montagem
+#
+# =====================================================================
+#  DESMONTAGEM
+# =====================================================================
+#
+#  -u  <ponto>
+#      Desmonta um ponto específico.
+#
+#  -f
+#      Desmonta TODOS os mounts cuja origem contenha
+#      EXATAMENTE o IP definido em HOST_VAR.
+#
+#      • Match exato de IP (evita falso positivo)
+#      • Não desmonta "/"
+#      • Desmontagem modo normal
+#
+#  -F
+#      Desmontagem ULTRA AGRESSIVA por IP (HOST_VAR):
+#
+#        1) umount
+#        2) umount -f
+#        3) fusermount -u
+#        4) fuser -km (mata processos)
+#        5) umount -l (lazy unmount)
+#
+# =====================================================================
+#  MODOS DE EXECUÇÃO
+# =====================================================================
+#
+#  -s | -silent
+#      Executa sem exibir mensagens informativas.
+#
+#  -d | -debug
+#      Exibe informações detalhadas de execução.
+#
+# =====================================================================
+#  PROTEÇÕES IMPLEMENTADAS
+# =====================================================================
+#
+#  ✔ Match exato de IP (sem substring match)
+#  ✔ Não desmonta "/"
+#  ✔ Validação de tipo ro|rw
+#  ✔ Teste prévio de conectividade SSH
+#  ✔ Evita remontar se já estiver montado
+#  ✔ Saída com código de erro apropriado
+#
+# =====================================================================
+#  DEPENDÊNCIAS
+# =====================================================================
+#
+#  • sshfs
+#  • sshpass
+#  • mountpoint
+#  • fusermount
+#  • fuser
+#
+# =====================================================================
+
+VERSION="1.0"
+
+HOST_VAR="191.25.12.90"
+REMOTE_VAR="/dados"
+TIPO_VAR="ro"
+USER_VAR="root"
+PASS_VAR="8sit"
+LOCAL_VAR="/mnt/temp01"
+
+modo="normal"
+acao="mount"
+
+info() {
+    [ "$modo" = "silent" ] && return
+    echo "[INFO] $1"
+}
+
+debug() {
+    [ "$modo" = "debug" ] && echo "[DEBUG] $1"
+}
+
+erro() {
+    echo "[ERRO] $1"
+    exit 1
+}
+
+verifica_dependencias() {
+    which sshfs >/dev/null 2>&1 || erro "sshfs não instalado."
+    which sshpass >/dev/null 2>&1 || erro "sshpass não instalado."
+    which mountpoint >/dev/null 2>&1 || erro "mountpoint não encontrado."
+}
+
+ja_montado() {
+    mountpoint -q "$1"
+    return $?
+}
+
+desmontar_normal() {
+    ponto="$1"
+    umount "$ponto" 2>/dev/null && return
+    fusermount -u "$ponto" 2>/dev/null && return
+    umount -f "$ponto" 2>/dev/null
+}
+
+desmontar_ultra() {
+    ponto="$1"
+
+    info "Tentando umount normal..."
+    umount "$ponto" 2>/dev/null && return
+
+    info "Tentando umount forçado..."
+    umount -f "$ponto" 2>/dev/null && return
+
+    info "Tentando fusermount..."
+    fusermount -u "$ponto" 2>/dev/null && return
+
+    info "Matando processos usando $ponto..."
+    fuser -km "$ponto" 2>/dev/null
+
+    info "Executando lazy unmount..."
+    umount -l "$ponto" 2>/dev/null
+}
+
+desmontar_por_ip() {
+
+    modo_forca="$1"
+    ip_alvo="$HOST_VAR"
+
+    [ -z "$ip_alvo" ] && erro "HOST_VAR está vazio."
+
+    info "Procurando montagens originadas EXATAMENTE de $ip_alvo"
+
+    mount | while read linha; do
+
+        origem=$(echo "$linha" | awk '{print $1}')
+        ponto=$(echo "$linha" | awk '{print $3}')
+
+        origem_limpa=$(echo "$origem" | sed 's/.*@//')
+        ip_extraido=$(echo "$origem_limpa" | cut -d':' -f1)
+
+        if [ "$ip_extraido" = "$ip_alvo" ]; then
+
+            if [ "$ponto" = "/" ] || [ -z "$ponto" ]; then
+                continue
+            fi
+
+            info "Desmontando $ponto"
+
+            if [ "$modo_forca" = "ultra" ]; then
+                desmontar_ultra "$ponto"
+            else
+                desmontar_normal "$ponto"
+            fi
+        fi
+
+    done
+
+    info "Operação concluída."
+    exit 0
+}
+
+desmontar_ponto() {
+    ponto="$1"
+    [ -z "$ponto" ] && erro "Informe o ponto para desmontar."
+
+    if ja_montado "$ponto"; then
+        desmontar_normal "$ponto"
+        info "Desmontado."
+    else
+        info "Nada montado em $ponto."
+    fi
+
+    exit 0
+}
+
+while [ ! -z "$1" ]; do
+    case "$1" in
+        -s|-silent)
+            modo="silent"
+            shift
+        ;;
+        -d|-debug)
+            modo="debug"
+            shift
+        ;;
+        -u|-umount)
+            acao="umount"
+            shift
+            break
+        ;;
+        -f)
+            acao="force_normal"
+            shift
+        ;;
+        -F)
+            acao="force_ultra"
+            shift
+        ;;
+        *)
+            break
+        ;;
+    esac
+done
+
+if [ "$acao" = "umount" ]; then
+    desmontar_ponto "$1"
+fi
+
+if [ "$acao" = "force_normal" ]; then
+    desmontar_por_ip "normal"
+fi
+
+if [ "$acao" = "force_ultra" ]; then
+    desmontar_por_ip "ultra"
+fi
+
+[ -z "$HOST_VAR" ] && host="$1" || host="$HOST_VAR"
+[ -z "$REMOTE_VAR" ] && remoto="$2" || remoto="$REMOTE_VAR"
+[ -z "$TIPO_VAR" ] && tipo="$3" || tipo="$TIPO_VAR"
+[ -z "$USER_VAR" ] && usuario="$4" || usuario="$USER_VAR"
+[ -z "$PASS_VAR" ] && senha="$5" || senha="$PASS_VAR"
+[ -z "$LOCAL_VAR" ] && local_mount="$6" || local_mount="$LOCAL_VAR"
+
+[ -z "$host" ] && erro "Host não informado."
+[ -z "$remoto" ] && erro "Caminho remoto não informado."
+[ -z "$tipo" ] && erro "Tipo não informado (ro/rw)."
+[ -z "$usuario" ] && erro "Usuário não informado."
+[ -z "$senha" ] && erro "Senha não informada."
+[ -z "$local_mount" ] && erro "Ponto local não informado."
+
+if [ "$tipo" != "ro" ] && [ "$tipo" != "rw" ]; then
+    erro "Tipo deve ser ro ou rw."
+fi
+
+verifica_dependencias
+
+if [ ! -d "$local_mount" ]; then
+    info "Criando $local_mount"
+    mkdir -p "$local_mount" || erro "Falha ao criar diretório."
+fi
+
+if ja_montado "$local_mount"; then
+    info "Já montado."
+    exit 0
+fi
+
+debug "Testando conectividade SSH..."
+
+sshpass -p "$senha" ssh \
+-o StrictHostKeyChecking=no \
+-o ConnectTimeout=5 \
+"$usuario@$host" "exit" >/dev/null 2>&1
+
+[ $? -ne 0 ] && erro "Falha na conexão SSH."
+
+info "Montando $usuario@$host:$remoto"
+
+sshpass -p "$senha" sshfs \
+-o password_stdin \
+-o StrictHostKeyChecking=no \
+-o "$tipo" \
+"$usuario@$host:$remoto" "$local_mount" <<< "$senha"
+
+[ $? -ne 0 ] && erro "Falha na montagem."
+
+if ja_montado "$local_mount"; then
+    info "Montado com sucesso."
+else
+    erro "Montagem não confirmada."
+fi
+
+exit 0
