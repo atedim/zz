@@ -1,0 +1,148 @@
+#!/bin/bash
+
+WG_DIR="/etc/wireguard"
+
+list_conf_interfaces() {
+    ls $WG_DIR/*.conf 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/.conf//'
+}
+
+list_active_interfaces() {
+    wg show interfaces 2>/dev/null
+}
+
+check_interface_exists() {
+    if [ ! -f "$WG_DIR/$1.conf" ]; then
+        echo "Interface $1 não encontrada em $WG_DIR"
+        exit 1
+    fi
+}
+
+case "$1" in
+
+    -list)
+        echo "=== Interfaces Ativas ==="
+        ACTIVE=$(list_active_interfaces)
+
+        if [ -n "$ACTIVE" ]; then
+            for IFACE in $ACTIVE; do
+                echo
+                echo "Interface: $IFACE (UP)"
+                wg show $IFACE
+            done
+        else
+            echo "Nenhuma interface ativa."
+        fi
+
+        echo
+        echo "=== Interfaces Configuradas ==="
+        list_conf_interfaces
+        ;;
+
+    -kill)
+        echo "Encerrando TODAS as interfaces WireGuard..."
+
+        ACTIVE=$(list_active_interfaces)
+
+        if [ -n "$ACTIVE" ]; then
+            for IFACE in $ACTIVE; do
+                echo "Parando wg-quick@$IFACE"
+                systemctl stop wg-quick@$IFACE 2>/dev/null
+                systemctl disable wg-quick@$IFACE 2>/dev/null
+            done
+            echo "Todas as interfaces foram encerradas."
+        else
+            echo "Nenhuma interface ativa encontrada."
+        fi
+        ;;
+
+    -on)
+        IFACE="$2"
+        [ -z "$IFACE" ] && echo "Uso: zz_wg -on <interface>" && exit 1
+        check_interface_exists "$IFACE"
+        systemctl enable wg-quick@$IFACE
+        systemctl start wg-quick@$IFACE
+        ;;
+
+    -start)
+        IFACE="$2"
+        [ -z "$IFACE" ] && echo "Uso: zz_wg -start <interface>" && exit 1
+        check_interface_exists "$IFACE"
+        systemctl start wg-quick@$IFACE
+        ;;
+
+    -off)
+        IFACE="$2"
+        [ -z "$IFACE" ] && echo "Uso: zz_wg -off <interface>" && exit 1
+        systemctl stop wg-quick@$IFACE
+        systemctl disable wg-quick@$IFACE
+        ;;
+
+    -restart)
+        IFACE="$2"
+        [ -z "$IFACE" ] && echo "Uso: zz_wg -restart <interface>" && exit 1
+        check_interface_exists "$IFACE"
+        systemctl restart wg-quick@$IFACE
+        ;;
+
+    -status)
+        IFACE="$2"
+        [ -z "$IFACE" ] && echo "Uso: zz_wg -status <interface>" && exit 1
+
+        ACTIVE=$(list_active_interfaces)
+        if echo "$ACTIVE" | grep -qw "$IFACE"; then
+            echo "Interface $IFACE está UP"
+            wg show $IFACE
+        else
+            echo "Interface $IFACE está DOWN"
+        fi
+        ;;
+
+    -add)
+        IFACE="$2"
+        [ -z "$IFACE" ] && echo "Uso: zz_wg -add <interface>" && exit 1
+        check_interface_exists "$IFACE"
+
+        read -p "Nome do peer: " PEERNAME
+        read -p "PublicKey do peer: " PUBKEY
+        read -p "AllowedIPs (ex: 10.0.0.2/32): " ALLOWEDIPS
+
+        echo "" >> "$WG_DIR/$IFACE.conf"
+        echo "# --- $PEERNAME ---" >> "$WG_DIR/$IFACE.conf"
+        echo "[Peer]" >> "$WG_DIR/$IFACE.conf"
+        echo "PublicKey = $PUBKEY" >> "$WG_DIR/$IFACE.conf"
+        echo "AllowedIPs = $ALLOWEDIPS" >> "$WG_DIR/$IFACE.conf"
+
+        echo "Peer adicionado. Execute: zz_wg -restart $IFACE"
+        ;;
+
+    -del)
+        IFACE="$2"
+        [ -z "$IFACE" ] && echo "Uso: zz_wg -del <interface>" && exit 1
+        check_interface_exists "$IFACE"
+
+        read -p "Nome do peer para remover: " PEERNAME
+
+        if grep -q "# --- $PEERNAME ---" "$WG_DIR/$IFACE.conf"; then
+            sed -i "/# --- $PEERNAME ---/,+4d" "$WG_DIR/$IFACE.conf"
+            echo "Peer removido. Execute: zz_wg -restart $IFACE"
+        else
+            echo "Peer não encontrado."
+        fi
+        ;;
+
+    *)
+        echo
+        echo "===== zz_wg ====="
+        echo
+        echo "zz_wg -list"
+        echo "zz_wg -kill"
+        echo "zz_wg -on <interface>"
+        echo "zz_wg -start <interface>"
+        echo "zz_wg -off <interface>"
+        echo "zz_wg -restart <interface>"
+        echo "zz_wg -status <interface>"
+        echo "zz_wg -add <interface>"
+        echo "zz_wg -del <interface>"
+        echo
+        ;;
+esac
