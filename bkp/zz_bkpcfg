@@ -93,7 +93,7 @@ done
 # Filtra apenas diretórios existentes para evitar erro no tar
 diretorios_validos=""
 for dir in $diretorios; do
-    if [ -d "$dir" ]; then
+    if [ -e "$dir" ]; then
         diretorios_validos+="$dir "
     fi
 done
