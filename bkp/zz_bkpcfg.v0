@@ -8,7 +8,7 @@
 #                para um arquivo .tar.gz, mantendo apenas backups recentes.
 # Autor........: Antonio Tedim
 # Data criação.: 26/01/2024
-# Última modif.: 02/03/2026
+# Última modif.: 10/05/2025
 #
 # Funcionalidades:
 #   - Gera backup compactado (.tgz) com data e hostname no nome.
@@ -38,7 +38,7 @@ verifica_ou_cria_diretorio() {
 limpa_backups_antigos() {
     if [ "$flag_nodel" != "sim" ]; then
         echo "Removendo backups com mais de $dias_reter dias em $diretorio_destino..."
-        find "$diretorio_destino" -name "*_configs_*.tgz" -type f -mtime +$dias_reter -exec rm -f {} \;
+             find "$diretorio_destino" -name "*_configs_*.tgz" -type f -mtime +$((dias_reter - 1)) -exec rm -f {} \;
     else
         echo "Flag -nodel ativada. Nenhum backup antigo será excluído."
     fi
@@ -58,16 +58,7 @@ done
 dias_reter=7
 
 # Diretórios e exclusões
-diretorios="
-/etc/scripts
-/etc/fstab
-/etc/ssh
-/etc/samba
-/etc/wireguard
-/etc/network
-/root
-"
-
+diretorios="/etc/fstab /etc/scripts /etc/ssh /etc/samba"
 excluidos="/etc/scripts/bkp_configs"
 diretorio_destino="/etc/scripts/bkp_configs"
 
@@ -81,8 +72,8 @@ arquivo="${host}_configs_${data}.tgz"
 # Garante que o diretório de destino existe
 verifica_ou_cria_diretorio "$diretorio_destino"
 
-# Exporta crontab com segurança
-crontab -l > "/etc/scripts/cron.txt" 2>/dev/null || echo "Sem crontab para root." > "/etc/scripts/cron.txt"
+# Exporta crontab
+crontab -l > "/etc/scripts/cron.txt"
 
 # Monta exclusões para o tar
 exclui_args=""
@@ -90,16 +81,8 @@ for excluido in $excluidos; do
     exclui_args+="--exclude=$excluido "
 done
 
-# Filtra apenas diretórios existentes para evitar erro no tar
-diretorios_validos=""
-for dir in $diretorios; do
-    if [ -d "$dir" ]; then
-        diretorios_validos+="$dir "
-    fi
-done
-
 # Executa o backup
-tar zcvpf "${diretorio_destino}/${arquivo}" $exclui_args $diretorios_validos
+tar zcvfp "${diretorio_destino}/${arquivo}" $exclui_args $diretorios
 
 # Marca hora de término
 hora_fim=$(date +"%d/%m/%Y - %H:%M:%S")
@@ -123,7 +106,7 @@ EOF
 O Backup do host $host com IP $ip_lan foi executado com sucesso.
 
 O conteúdo das pastas:
-$diretorios_validos
+$diretorios
 
 foi guardado com sucesso.
 

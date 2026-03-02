@@ -1,0 +1,55 @@
+#!/bin/bash
+
+##########################################################################
+# Nome.........: zz_attrcopy
+# Descrição....: Copia owner, group e permissões (incluindo bits especiais)
+#                de um arquivo origem para um destino.
+#                Opcionalmente copia timestamp com a flag -t.
+#
+# Uso:
+#   zz_attrcopy <origem> <destino>
+#   zz_attrcopy -t <origem> <destino>   (copia também timestamps)
+#
+##########################################################################
+
+copiar_timestamp="nao"
+
+# Verifica se primeira flag é -t
+if [ "$1" = "-t" ]; then
+    copiar_timestamp="sim"
+    shift
+fi
+
+# Validação de parâmetros
+if [ $# -ne 2 ]; then
+    echo "Uso:"
+    echo "  zz_attrcopy <origem> <destino>"
+    echo "  zz_attrcopy -t <origem> <destino>   (copia também timestamps)"
+    exit 1
+fi
+
+ORIGEM="$1"
+DESTINO="$2"
+
+# Verifica existência
+if [ ! -e "$ORIGEM" ]; then
+    echo "Erro: Arquivo origem não existe."
+    exit 1
+fi
+
+if [ ! -e "$DESTINO" ]; then
+    echo "Erro: Arquivo destino não existe."
+    exit 1
+fi
+
+echo "Copiando owner, group e permissões..."
+chmod --reference="$ORIGEM" "$DESTINO"
+chown --reference="$ORIGEM" "$DESTINO"
+
+# Copia timestamp apenas se solicitado
+if [ "$copiar_timestamp" = "sim" ]; then
+    echo "Copiando timestamps..."
+    touch -r "$ORIGEM" "$DESTINO"
+fi
+
+echo "Concluído com sucesso."
