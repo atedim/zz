@@ -1,0 +1,158 @@
+#!/bin/bash
+
+#########################################
+# Configurações
+#########################################
+
+LOG="/tmp/rclone_sync.log"
+
+COR_RESET="\033[0m"
+COR_VERDE="\033[1;32m"
+COR_VERMELHO="\033[1;31m"
+COR_AMARELO="\033[1;33m"
+COR_AZUL="\033[1;34m"
+
+#########################################
+# Funções
+#########################################
+
+sync_local() {
+
+echo -e "${COR_AMARELO}Iniciando Sync LOCAL${COR_RESET}"
+
+INICIO=$(date +%s)
+
+rclone sync 163-Grievous-L:Dados/ 161-Tank-L:dados/ \
+--exclude "Trabalho/**" \
+--exclude ".recycle/**" \
+--exclude "*[sS][bB][sS][eE]*" \
+--progress \
+--retries 3 \
+--low-level-retries 10 \
+--transfers 32 \
+--checkers 64 \
+--buffer-size 64M \
+--multi-thread-streams 8 \
+--use-mmap \
+--stats 1s \
+--timeout 1h
+
+FIM=$(date +%s)
+
+TEMPO=$((FIM-INICIO))
+
+echo -e "${COR_VERDE}Sync LOCAL finalizada em ${TEMPO}s${COR_RESET}" | tee -a "$LOG"
+
+}
+
+sync_alba() {
+
+echo -e "${COR_AMARELO}Iniciando Sync ALBA${COR_RESET}"
+
+INICIO=$(date +%s)
+
+rclone sync 163-Grievous-L:Dados/Trabalho/ 161-Tank-L:alba/ \
+--progress \
+--retries 3 \
+--low-level-retries 10 \
+--transfers 32 \
+--checkers 64 \
+--buffer-size 64M \
+--multi-thread-streams 8 \
+--use-mmap \
+--stats 1s \
+--timeout 1h
+
+FIM=$(date +%s)
+
+TEMPO=$((FIM-INICIO))
+
+echo -e "${COR_VERDE}Sync ALBA finalizada em ${TEMPO}s${COR_RESET}" | tee -a "$LOG"
+
+}
+
+dry_local() {
+
+echo -e "${COR_AMARELO}Dry Run LOCAL${COR_RESET}"
+
+rclone sync 163-Grievous-L:Dados/ 161-Tank-L:dados/ \
+--exclude "Trabalho/**" \
+--exclude ".recycle/**" \
+--exclude "*[sS][bB][sS][eE]*" \
+--dry-run \
+--progress
+
+}
+
+dry_alba() {
+
+echo -e "${COR_AMARELO}Dry Run ALBA${COR_RESET}"
+
+rclone sync 163-Grievous-L:Dados/Trabalho/ 161-Tank-L:alba/ \
+--dry-run \
+--progress
+
+}
+
+#########################################
+# Menu
+#########################################
+
+MENU=$(whiptail \
+--title "Sincronização de Backups" \
+--checklist "Selecione as tarefas desejadas:" \
+20 70 10 \
+"all" "Executar TODAS as sincronizações" ON \
+"dry_local" "Dry Run - Local" OFF \
+"dry_alba" "Dry Run - Alba" OFF \
+"run_local" "Run - Local" OFF \
+"run_alba" "Run - Alba" OFF \
+3>&1 1>&2 2>&3)
+
+clear
+
+#########################################
+# Execução
+#########################################
+
+for opcao in $MENU
+do
+
+case $opcao in
+
+\"all\")
+
+sync_local
+sync_alba
+
+;;
+
+\"dry_local\")
+
+dry_local
+
+;;
+
+\"dry_alba\")
+
+dry_alba
+
+;;
+
+\"run_local\")
+
+sync_local
+
+;;
+
+\"run_alba\")
+
+sync_alba
+
+;;
+
+esac
+
+done
+
+echo -e "${COR_AZUL}Processo finalizado${COR_RESET}"

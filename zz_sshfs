@@ -1,0 +1,118 @@
+#!/bin/bash
+
+#############################################
+# Configurações
+#############################################
+
+USER_REMOTO="root"
+SENHA_REMOTA="8s9iy#9GMDwFS9t"
+HOST_REMOTO="tedimvps.duckdns.org"
+
+DIR_REMOTO="/dados"
+PONTO_MONTAGEM="/mnt/vps"
+
+
+#############################################
+# VERIFICAR ROOT
+#############################################
+
+if [ "$(id -u)" != "0" ]; then
+    echo "Erro: execute como root."
+    exit 1
+fi
+
+#############################################
+# VERIFICAR DEPENDÊNCIAS
+#############################################
+
+for cmd in sshfs sshpass fusermount ssh mountpoint; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "Erro: dependência ausente -> $cmd"
+        exit 1
+    fi
+done
+
+#############################################
+# LIMPAR MOUNT QUEBRADO
+#############################################
+
+if mountpoint -q "$PONTO_MONTAGEM"; then
+
+    if ! timeout 5 ls "$PONTO_MONTAGEM" >/dev/null 2>&1; then
+        echo "Mount quebrado detectado. Limpando..."
+
+        fusermount -uz "$PONTO_MONTAGEM" 2>/dev/null
+        umount -l "$PONTO_MONTAGEM" 2>/dev/null
+
+        sleep 2
+    else
+        echo "Já montado e funcional."
+        exit 0
+    fi
+
+fi
+
+#############################################
+# GARANTIR DIRETÓRIO
+#############################################
+
+if [ ! -d "$PONTO_MONTAGEM" ]; then
+    mkdir -p "$PONTO_MONTAGEM"
+fi
+
+#############################################
+# TESTAR CONEXÃO SSH
+#############################################
+
+echo "Testando conexão SSH..."
+
+sshpass -p "$SENHA_REMOTA" ssh \
+-o StrictHostKeyChecking=no \
+-o ConnectTimeout=5 \
+"$USER_REMOTO@$HOST_REMOTO" exit >/dev/null 2>&1
+
+if [ $? -ne 0 ]; then
+    echo "Erro: servidor SSH inacessível."
+    exit 1
+fi
+
+#############################################
+# MONTAR SSHFS
+#############################################
+
+echo "Montando SSHFS..."
+
+sshfs "$USER_REMOTO@$HOST_REMOTO:$DIR_REMOTO" "$PONTO_MONTAGEM" \
+-o ssh_command="sshpass -p $SENHA_REMOTA ssh" \
+-o reconnect \
+-o ServerAliveInterval=15 \
+-o ServerAliveCountMax=3 \
+-o auto_unmount \
+-o StrictHostKeyChecking=no
+
+sleep 3
+
+#############################################
+# VALIDAR MONTAGEM
+#############################################
+
+if mountpoint -q "$PONTO_MONTAGEM"; then
+
+    if timeout 5 ls "$PONTO_MONTAGEM" >/dev/null 2>&1; then
+        echo "Montagem realizada com sucesso."
+        exit 0
+    fi
+
+fi
+
+#############################################
+# LIMPAR SE FALHOU
+#############################################
+
+echo "Mount inválido detectado. Limpando..."
+
+fusermount -uz "$PONTO_MONTAGEM" 2>/dev/null
+umount -l "$PONTO_MONTAGEM" 2>/dev/null
+
+echo "Falha ao montar SSHFS."
+exit 1
