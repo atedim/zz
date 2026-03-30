@@ -1,0 +1,180 @@
+DEPENDENCIAS IDENTIFICADAS PARA EXECUTAR O CONJUNTO DE SCRIPTS
+
+Data da varredura: 2026-03-30 15:00:52
+Total de scripts considerados: 63
+
+AMBIENTE BASE
+- Linux com Bash e systemd.
+- Acesso de root/sudo para tarefas de instalacao, discos, rede, montagem e backup.
+- Rede com DNS e acesso HTTP/HTTPS para downloads, descoberta de IP publico e APIs externas.
+
+PACOTES E FERRAMENTAS
+- apache2-utils
+  Pacote sugerido: apache2-utils
+  Motivo: Fornece o comando htpasswd.
+  Scripts: zz/zz_web
+- bash
+  Pacote sugerido: bash
+  Motivo: Interpretador principal dos scripts.
+  Scripts: zz/ANALISAR/zz_2wan.sh, zz/bkp/zz_bkpcfg, zz/bkp/zz_bkpcfg.v0, zz/bkp/zz_compact, zz/bkp/zz_compactV2, zz/bkp/zz_remote_bkp/zz_remote_bkp.sh, zz/deprecated/base/zz_instala, zz/deprecated/ntools, zz/disktools/zz_discos, zz/disktools/zz_formata, zz/disktools/zz_lvm, zz/disktools/zz_monta, zz/down/zz_down, zz/file_folder/zz_dif_tam, zz/file_folder/zz_perm, zz/file_folder/zz_removevazia, zz/file_folder/zz_temp, zz/file_folder/zz_trash, zz/ini/zz_ini, zz/isync, zz/kill_switch/zz_crypt, zz/kill_switch/zz_ks, zz/mail/zz_mail, zz/monitor/zz_mon, zz/monitor/zz_sys, zz/network/zz_ddns, zz/network/zz_ip, zz/network/zz_tcon, zz/network/zz_wanm, zz/prompt/zz_banner, zz/prompt/zz_prompt, zz/proxmox_calc/zz_restore_calc, zz/sync/syncALL, zz/sync/zz_1to2, zz/sync/zz_dtm, zz/sync/zz_status, zz/sync/zz_sync, zz/syncALL, zz/zz_apagar, zz/zz_attrcopy, zz/zz_careful, zz/zz_del_old, zz/zz_dupfind, zz/zz_GDRIVE, zz/zz_gitclone, zz/zz_gri2nas, zz/zz_isync_gn, zz/zz_kamba, zz/zz_kill, zz/zz_mensal_grievous, zz/zz_mensal_nasareth, zz/zz_mountSSH, zz/zz_new, zz/zz_ramdisk, zz/zz_sbse, zz/zz_size, zz/zz_sshfs, zz/zz_start, zz/zz_tam, zz/zz_tar, zz/zz_vel, zz/zz_web, zz/zz_wire
+- bc
+  Pacote sugerido: bc
+  Motivo: Calculos com ponto flutuante.
+  Scripts: zz/deprecated/base/zz_instala, zz/proxmox_calc/zz_restore_calc, zz/zz_start
+- cifs-utils
+  Pacote sugerido: cifs-utils
+  Motivo: Montagem de compartilhamentos SMB/CIFS.
+  Scripts: zz/sync/zz_sync
+- coreutils/findutils/grep/sed/awk/tar
+  Pacote sugerido: coreutils, findutils, grep, sed, gawk, tar
+  Motivo: Conjunto basico de utilitarios GNU usado no acervo.
+  Scripts: zz/ANALISAR/zz_2wan.sh, zz/bkp/zz_bkpcfg, zz/bkp/zz_bkpcfg.v0, zz/bkp/zz_compact, zz/bkp/zz_compactV2, zz/bkp/zz_remote_bkp/zz_remote_bkp.sh, zz/deprecated/base/zz_instala, zz/disktools/zz_discos, zz/disktools/zz_formata, zz/disktools/zz_lvm, zz/down/zz_down, zz/file_folder/zz_dif_tam, zz/file_folder/zz_perm, zz/file_folder/zz_removevazia, zz/file_folder/zz_temp, zz/file_folder/zz_trash, zz/ini/zz_ini, zz/isync, zz/monitor/zz_mon, zz/monitor/zz_sys, zz/network/zz_ip, zz/network/zz_tcon, zz/prompt/zz_prompt, zz/sync/zz_1to2, zz/sync/zz_sync, zz/zz_apagar, zz/zz_careful, zz/zz_del_old, zz/zz_dupfind, zz/zz_kamba, zz/zz_mountSSH, zz/zz_ramdisk, zz/zz_sbse, zz/zz_size, zz/zz_start, zz/zz_tam, zz/zz_tar, zz/zz_vel, zz/zz_web, zz/zz_wire
+- curl
+  Pacote sugerido: curl
+  Motivo: Downloads HTTP/HTTPS, descoberta de IP publico e chamadas a APIs.
+  Scripts: zz/ANALISAR/zz_2wan.sh, zz/deprecated/base/zz_instala, zz/deprecated/ntools, zz/down/zz_down, zz/kill_switch/zz_ks, zz/network/zz_ddns, zz/network/zz_ip, zz/zz_start
+- dnsutils
+  Pacote sugerido: dnsutils
+  Motivo: Resolucao DNS via dig.
+  Scripts: zz/network/zz_tcon
+- dos2unix
+  Pacote sugerido: dos2unix
+  Motivo: Normalizacao de finais de linha apos download.
+  Scripts: zz/deprecated/base/zz_instala, zz/down/zz_down, zz/zz_start
+- e2fsprogs/util-linux
+  Pacote sugerido: e2fsprogs, util-linux
+  Motivo: Ferramentas como mkfs.ext4, e2label, blkid, wipefs, lsblk, mount e umount.
+  Scripts: zz/deprecated/ntools, zz/disktools/zz_discos, zz/disktools/zz_formata, zz/disktools/zz_lvm, zz/disktools/zz_monta, zz/sync/syncALL, zz/sync/zz_sync, zz/zz_mountSSH, zz/zz_ramdisk, zz/zz_sshfs
+- ethtool
+  Pacote sugerido: ethtool
+  Motivo: Consulta de velocidade e duplex de interfaces.
+  Scripts: zz/network/zz_ip, zz/zz_vel
+- fd-find
+  Pacote sugerido: fd-find
+  Motivo: Comando fdfind usado para inventario rapido de arquivos.
+  Scripts: zz/file_folder/zz_dif_tam
+- git
+  Pacote sugerido: git
+  Motivo: Clone e espelhamento de repositorios.
+  Scripts: zz/zz_gitclone
+- gzip
+  Pacote sugerido: gzip
+  Motivo: Compressao gzip.
+  Scripts: zz/bkp/zz_compactV2
+- ipcalc
+  Pacote sugerido: ipcalc
+  Motivo: Calculo de rede CIDR em configuracao dual WAN.
+  Scripts: zz/ANALISAR/zz_2wan.sh
+- iproute2
+  Pacote sugerido: iproute2
+  Motivo: Consulta e configuracao de interfaces, rotas e regras.
+  Scripts: zz/ANALISAR/zz_2wan.sh, zz/bkp/zz_bkpcfg, zz/bkp/zz_bkpcfg.v0, zz/bkp/zz_remote_bkp/zz_remote_bkp.sh, zz/deprecated/ntools, zz/monitor/zz_mon, zz/monitor/zz_sys, zz/network/zz_ddns, zz/network/zz_ip, zz/network/zz_tcon, zz/network/zz_wanm, zz/sync/zz_sync, zz/zz_mountSSH
+- ksmbd-tools
+  Pacote sugerido: ksmbd-tools
+  Motivo: Instalacao e manutencao do servico KSMBD.
+  Scripts: zz/zz_kamba
+- lvm2
+  Pacote sugerido: lvm2
+  Motivo: Criacao de PV, VG e LV.
+  Scripts: zz/disktools/zz_lvm
+- mdadm
+  Pacote sugerido: mdadm
+  Motivo: Criacao e gerenciamento de arrays RAID.
+  Scripts: zz/deprecated/base/zz_instala, zz/disktools/zz_lvm, zz/zz_start
+- mergerfs
+  Pacote sugerido: mergerfs
+  Motivo: Uniao de varios discos em um destino logico.
+  Scripts: zz/deprecated/base/zz_instala, zz/deprecated/ntools, zz/zz_start
+- mime-construct
+  Pacote sugerido: mime-construct
+  Motivo: Montagem de mensagem MIME e anexos.
+  Scripts: zz/mail/zz_mail, zz/zz_start
+- msmtp
+  Pacote sugerido: msmtp, msmtp-mta
+  Motivo: Envio de e-mail via SMTP.
+  Scripts: zz/deprecated/base/zz_instala, zz/mail/zz_mail, zz/zz_start
+- net-tools
+  Pacote sugerido: net-tools
+  Motivo: Fallback legado via ifconfig e route.
+  Scripts: zz/network/zz_ip
+- nginx
+  Pacote sugerido: nginx
+  Motivo: Servico web controlado por zz_web.
+  Scripts: zz/zz_web
+- ntpdate
+  Pacote sugerido: ntpdate
+  Motivo: Sincronizacao de horario antes de rotinas sensiveis a data/hora.
+  Scripts: zz/deprecated/base/zz_instala, zz/deprecated/ntools, zz/down/zz_down, zz/file_folder/zz_temp, zz/file_folder/zz_trash, zz/kill_switch/zz_ks, zz/sync/zz_dtm, zz/zz_start
+- openssh-client/scp
+  Pacote sugerido: openssh-client
+  Motivo: Conexao SSH e transferencia SCP.
+  Scripts: zz/bkp/zz_bkpcfg, zz/bkp/zz_bkpcfg.v0, zz/bkp/zz_remote_bkp/zz_remote_bkp.sh, zz/monitor/zz_sys, zz/zz_mountSSH, zz/zz_sshfs, zz/zz_vel
+- openssl
+  Pacote sugerido: openssl
+  Motivo: Criptografia e descriptografia de conteudo.
+  Scripts: zz/kill_switch/zz_crypt, zz/kill_switch/zz_ks
+- parted
+  Pacote sugerido: parted
+  Motivo: Particionamento de discos.
+  Scripts: zz/deprecated/base/zz_instala, zz/disktools/zz_discos, zz/disktools/zz_formata, zz/zz_start
+- ping
+  Pacote sugerido: iputils-ping ou inetutils-ping
+  Motivo: Teste de conectividade.
+  Scripts: zz/ANALISAR/zz_2wan.sh, zz/monitor/zz_mon, zz/monitor/zz_sys, zz/network/zz_tcon
+- rclone
+  Pacote sugerido: rclone
+  Motivo: Sincronizacao com remotos locais e nuvem.
+  Scripts: zz/deprecated/base/zz_instala, zz/sync/zz_dtm, zz/zz_GDRIVE, zz/zz_gri2nas, zz/zz_isync_gn, zz/zz_kill, zz/zz_mensal_grievous, zz/zz_mensal_nasareth, zz/zz_new, zz/zz_start
+- rsync
+  Pacote sugerido: rsync
+  Motivo: Sincronizacao local ou entre mounts CIFS.
+  Scripts: zz/deprecated/base/zz_instala, zz/sync/zz_1to2, zz/sync/zz_sync, zz/zz_kill, zz/zz_start
+- samba
+  Pacote sugerido: samba
+  Motivo: Arquivos de configuracao SMB e cenarios de compartilhamento local.
+  Scripts: zz/bkp/zz_bkpcfg, zz/bkp/zz_bkpcfg.v0, zz/deprecated/ntools, zz/monitor/zz_sys
+- sshfs
+  Pacote sugerido: sshfs
+  Motivo: Montagem de diretorios remotos via FUSE.
+  Scripts: zz/zz_mountSSH, zz/zz_sshfs
+- sshpass
+  Pacote sugerido: sshpass
+  Motivo: Automacao de autenticacao em SSH, SSHFS e SCP.
+  Scripts: zz/bkp/zz_remote_bkp/zz_remote_bkp.sh, zz/deprecated/base/zz_instala, zz/zz_mountSSH, zz/zz_sshfs, zz/zz_start
+- systemd
+  Pacote sugerido: systemd
+  Motivo: Controle de servicos e unidades do sistema.
+  Scripts: zz/ANALISAR/zz_2wan.sh, zz/disktools/zz_lvm, zz/monitor/zz_sys, zz/zz_kamba, zz/zz_web, zz/zz_wire
+- wget
+  Pacote sugerido: wget
+  Motivo: Fallback de download e consultas simples via HTTP/HTTPS.
+  Scripts: zz/deprecated/base/zz_instala, zz/down/zz_down, zz/network/zz_ip, zz/zz_ramdisk, zz/zz_start
+- whiptail
+  Pacote sugerido: whiptail
+  Motivo: Menus interativos em modo texto.
+  Scripts: zz/disktools/zz_lvm, zz/isync, zz/zz_isync_gn
+- wireguard-tools
+  Pacote sugerido: wireguard-tools
+  Motivo: Comandos wg e operacao de interfaces wg-quick.
+  Scripts: zz/zz_wire
+- xz-utils
+  Pacote sugerido: xz-utils
+  Motivo: Compressao xz.
+  Scripts: zz/bkp/zz_compact
+- zstd
+  Pacote sugerido: zstd
+  Motivo: Compressao para backups remotos.
+  Scripts: zz/bkp/zz_remote_bkp/zz_remote_bkp.sh
+
+SERVICOS E INFRAESTRUTURA EXTERNA
+- `pool.ntp.org`: usado por varios scripts para sincronizacao de horario via `ntpdate`.
+- GitHub Raw: necessario para `zz_start`, `zz_down`, `zz_instala` e rotinas que baixam scripts ou INIs.
+- Remotos `rclone` previamente configurados em `rclone.conf`: exigidos por wrappers de backup/sincronizacao com rclone.
+- Servidores SSH acessiveis: exigidos por `zz_sshfs`, `zz_mountSSH` e `zz_remote_bkp.sh`.
+- Compartilhamentos SMB/CIFS acessiveis: exigidos por `zz_sync`, `syncALL`, `isync` e wrappers relacionados.
+- SMTP configurado no `msmtp`: necessario para `zz_mail`, `zz_mon`, `zz_wanm` e `zz_bkpcfg` quando o envio esta habilitado.
+- DuckDNS: necessario para `zz_ddns` e `zz_wanm`.
+- WireGuard (`wg-quick`/`wg`): necessario para `zz_wire`.
+
+PACOTE BASE INSTALADO PELOS INSTALADORES
+- `zz_start` e `deprecated/base/zz_instala` tambem instalam um bundle operacional com `bmon`, `htop`, `mc`, `rcconf`, `iptraf-ng`, `gdu`, `etherwake`, `screen`, `samba`, `mergerfs`, `rclone`, `rsync`, `sshpass`, `dos2unix`, `msmtp`, `mime-construct`, `ntpdate`, `curl`, `bc`, `cifs-utils`, `parted`, `mdadm` e correlatos.
