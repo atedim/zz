@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# =====================================================================
+# Função: cria_pasta_data
+# Uso: cria_pasta_data <prefixo> <localidade>
+# Cria pasta no formato prefixoMMAAAA dentro da localidade
+# e retorna o caminho completo
+# =====================================================================
+cria_pasta_data() {
+    local prefixo="$1"
+    local localidade="$2"
+
+    # Atualizar data/hora (ajuste se necessário)
+    ntpdate -u pool.ntp.org >/dev/null 2>&1
+
+    # Usa o dia anterior como referência porque a coleta da manhã
+    # normalmente busca os arquivos gerados no dia anterior (--max-age 1d).
+    # Isso evita que um arquivo de 31/03 vá para a pasta 042026 em 01/04.
+    local mes=$(date -d 'yesterday' +%m)
+    local ano=$(date -d 'yesterday' +%Y)
+
+    # Montar nome da pasta
+    local nome_pasta="${prefixo}${mes}${ano}"
+
+    # Criar pasta
+    mkdir -p "${localidade}/${nome_pasta}"
+
+    # Retornar caminho da pasta
+    echo "${localidade}/${nome_pasta}"
+}
+
+# =====================================================================
+# Exemplo de uso
+# =====================================================================
+destino=$(cria_pasta_data "themis" "/dr/teste/themis")
+
+echo "Destino definido em: $destino"
+
+# =====================================================================
+# Variáveis para o rclone
+# =====================================================================
+perfil="THEMIS:penso/"
+periodo="--max-age 1d"
+retry="--retries 3"
+lowretry="--low-level-retries 10"
+transf="--transfers 4"
+ordem="--order-by size"
+timeout="--timeout 1h"
+multi="--multi-thread-streams 0"
+excluir="--exclude XMLeSocial/ZIP_OLDs/** --exclude XMLeSocial/retrobo/**"
+preserva="sim"
+manter="+1"
+
+
+# Preservação de timestamp
+if [ "$preserva" = "sim" ]; then
+    preserva_flag="--no-update-modtime"
+else
+    preserva_flag=""
+fi
+
+# Executa o rclone com o destino dinâmico
+rclone sync "$perfil" "$destino" -P $periodo $retry $lowretry $transf $ordem --stats 1s $timeout $multi $excluir $preserva_flag
+
+
+# Limpa antigos
+find $destino -type f -ctime $manter -exec rm {} \;
+find $destino -type f -mtime $manter -exec rm {} \;

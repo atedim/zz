@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# =====================================================================
+# Backup simples da pasta HK sem versionamento
+# Origem: \\192.168.1.5\dados\HK
+# Destino: \\192.168.0.5\dr\teste\hk
+# =====================================================================
+
+# Atualizar data/hora (ajuste se necessário)
+ntpdate -u pool.ntp.org >/dev/null 2>&1
+
+# =====================================================================
+# Variaveis para o rclone
+# Usa SMB na origem e caminho local no destino.
+# O script roda no servidor 192.168.0.5, entao /dr/teste/hk deve ser acessado localmente.
+# =====================================================================
+origem=":smb,host=192.168.1.5,share=dados:/HK"
+destino="/dr/teste/hk"
+retry="--retries 3"
+lowretry="--low-level-retries 10"
+transf="--transfers 4"
+ordem="--order-by size"
+timeout="--timeout 1h"
+multi="--multi-thread-streams 0"
+preserva="sim"
+
+# Preservacao de timestamp
+if [ "$preserva" = "sim" ]; then
+    preserva_flag="--no-update-modtime"
+else
+    preserva_flag=""
+fi
+
+echo "Sincronizando HK..."
+echo "Origem:  \\\\192.168.1.5\\dados\\HK"
+echo "Destino: /dr/teste/hk"
+
+mkdir -p "$destino"
+
+rclone sync "$origem" "$destino" -P $retry $lowretry $transf $ordem --stats 1s $timeout $multi $preserva_flag
+
+status=$?
+
+if [ $status -eq 0 ]; then
+    echo "Sincronizacao concluida com sucesso."
+else
+    echo "Erro na sincronizacao. Codigo de retorno: $status"
+fi
+
+exit $status

@@ -1,0 +1,130 @@
+#!/bin/bash
+
+# =====================================================================
+# Função: cria_pasta_data
+# Uso: cria_pasta_data <prefixo> <localidade>
+# Cria pasta no formato prefixoMMAAAA dentro da localidade
+# e retorna o caminho completo
+# =====================================================================
+cria_pasta_data() {
+    local prefixo="$1"
+    local localidade="$2"
+
+    # Atualizar data/hora (ajuste se necessário)
+    ntpdate -u pool.ntp.org >/dev/null 2>&1
+
+    # Usa o dia anterior como referência porque a coleta da manhã
+    # normalmente busca os arquivos gerados no dia anterior (--max-age 1d).
+    # Isso evita que um arquivo de 31/03 vá para a pasta 042026 em 01/04.
+    local mes=$(date -d 'yesterday' +%m)
+    local ano=$(date -d 'yesterday' +%Y)
+
+    # Montar nome da pasta
+    local nome_pasta="${prefixo}${mes}${ano}"
+
+    # Criar pasta
+    mkdir -p "${localidade}/${nome_pasta}"
+
+    # Retornar caminho da pasta
+    echo "${localidade}/${nome_pasta}"
+}
+
+# =====================================================================
+# Exemplo de uso
+# =====================================================================
+destino=$(cria_pasta_data "DTM" "/dr/teste/dtm")
+
+echo "Destino definido em: $destino"
+
+
+# =====================================================================
+# Variáveis para o rclone
+# =====================================================================
+perfil="DTM:BKP/BACKUPS/"
+periodo="--max-age 1d"
+retry="--retries 3"
+lowretry="--low-level-retries 10"
+transf="--transfers 4"
+ordem="--order-by size"
+timeout="--timeout 1h"
+multi="--multi-thread-streams 0"
+excluir="--exclude XMLeSocial/ZIP_OLDs/** --exclude XMLeSocial/retrobo/**"
+preserva="sim"
+manter="+1"
+
+
+# Preservação de timestamp
+if [ "$preserva" = "sim" ]; then
+    preserva_flag="--no-update-modtime"
+else
+    preserva_flag=""
+fi
+
+# Executa o rclone com o destino dinâmico
+rclone sync "$perfil" "$destino" -P $periodo $retry $lowretry $transf $ordem --stats 1s $timeout $multi $excluir $preserva_flag
+
+
+# Limpa antigos
+find $destino -type f -ctime $manter -exec rm {} \;
+find $destino -type f -mtime $manter -exec rm {} \;
+
+
+
+
+# =====================================================================
+# Função: renomeia_arquivos
+# =====================================================================
+renomeia_arquivos() {
+    local pasta="$1"
+
+    if [[ ! -d "$pasta" ]]; then
+        echo "Erro: pasta '$pasta' não existe."
+        return 1
+    fi
+
+    for arq in "$pasta"/*; do
+        [[ -f "$arq" ]] || continue
+        nome=$(basename "$arq")
+        extensao="${nome##*.}"
+        prefixo=""
+        ano=""; mes=""; dia=""; hora=""; min=""; seg=""
+
+        case "$nome" in
+            ALBATROZ_backup_*)
+                if [[ "$nome" =~ ^ALBATROZ_backup_([0-9]{4})_([0-9]{2})_([0-9]{2})_([0-9]{2})([0-9]{2})([0-9]{2})_ ]]; then
+                    prefixo="SQL"
+                    ano="${BASH_REMATCH[1]}"; mes="${BASH_REMATCH[2]}"; dia="${BASH_REMATCH[3]}"
+                    hora="${BASH_REMATCH[4]}"; min="${BASH_REMATCH[5]}"; seg="${BASH_REMATCH[6]}"
+                fi
+                ;;
+            ALBATROZ_[0-9]*)
+                if [[ "$nome" =~ ^ALBATROZ_([0-9]{2})([0-9]{2})([0-9]{4})_([0-9]{2})([0-9]{2}) ]]; then
+                    prefixo="SYS"
+                    dia="${BASH_REMATCH[1]}"; mes="${BASH_REMATCH[2]}"; ano="${BASH_REMATCH[3]}"
+                    hora="${BASH_REMATCH[4]}"; min="${BASH_REMATCH[5]}"; seg="00"
+                fi
+                ;;
+            ALBATROZSUB_[0-9]*)
+                if [[ "$nome" =~ ^ALBATROZSUB_([0-9]{2})([0-9]{2})([0-9]{4})_([0-9]{2})([0-9]{2}) ]]; then
+                    prefixo="SUB"
+                    dia="${BASH_REMATCH[1]}"; mes="${BASH_REMATCH[2]}"; ano="${BASH_REMATCH[3]}"
+                    hora="${BASH_REMATCH[4]}"; min="${BASH_REMATCH[5]}"; seg="00"
+                fi
+                ;;
+        esac
+
+        if [[ -z "$prefixo" ]]; then
+            echo "Ignorando: $nome (sem regra correspondente)"
+            continue
+        fi
+
+        data_fmt="${ano}-${mes}-${dia} ${hora}-${min}-${seg}"
+        novo_nome="${prefixo}_${data_fmt}.${extensao}"
+
+        mv "$arq" "$pasta/$novo_nome"
+        echo "Renomeado: $nome -> $novo_nome"
+    done
+}
+
+# Agora o destino já é reutilizado em qualquer lugar
+renomeia_arquivos "$destino"
