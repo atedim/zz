@@ -7,7 +7,7 @@ BKP_DIR="${BASE_DIR}/bkp"
 
 LOCK_FILE="/tmp/zz_mk_bkp.lock"
 
-DATE_FMT=$(date +"%d%m%y_%H%M")
+DATE_DIR=$(date +"%d%m%Y")
 LOG_FILE="${LOG_DIR}/backup_$(date +"%Y%m%d").log"
 
 mkdir -p "$LOG_DIR"
@@ -25,7 +25,7 @@ log() {
 }
 
 valida_dependencias() {
-    for cmd in sshpass ssh scp zstd tar flock; do
+    for cmd in sshpass ssh scp flock find rclone; do
         command -v $cmd >/dev/null 2>&1 || {
             log "erro: falta $cmd"
             exit 1
@@ -47,7 +47,7 @@ executa_backup() {
         return 1
     fi
 
-    DEST_DIR="${BKP_DIR}/${HOST_NAME}"
+    DEST_DIR="${BKP_DIR}/${HOST_NAME}/${DATE_DIR}"
     mkdir -p "$DEST_DIR"
 
     TENTATIVA=1
@@ -69,11 +69,12 @@ grep -o 'name=[^ ]*' | cut -d'=' -f2 | grep -Ei 'Backup.*\.(backup|rsc)$')
 
             log "[$HOST_NAME] baixando ${FILE}"
 
-            sshpass -p "$PASS" scp -o StrictHostKeyChecking=no -P "$PORT" \
-            ${USER}@${IP}:"${FILE}" "${DEST_DIR}/" </dev/null
+            SCP_OUTPUT=$(sshpass -p "$PASS" scp -o StrictHostKeyChecking=no -P "$PORT" \
+            ${USER}@${IP}:"${FILE}" "${DEST_DIR}/" </dev/null 2>&1)
 
             if [ $? -ne 0 ]; then
                 log "[$HOST_NAME] erro ao baixar ${FILE}"
+                [ -n "$SCP_OUTPUT" ] && log "[$HOST_NAME] scp: ${SCP_OUTPUT}"
                 ((TENTATIVA++))
                 sleep 2
                 continue 2
@@ -100,16 +101,69 @@ retencao() {
     DIAS="$1"
     log "aplicando retencao: $DIAS dias"
 
-    find "$BKP_DIR" -type f -name "*.zst" -mtime +$DIAS | while read f; do
-        log "removendo antigo: $f"
-        rm -f "$f"
+    if ! [[ "$DIAS" =~ ^[0-9]+$ ]]; then
+        log "retencao invalida '$DIAS', usando 7 dias"
+        DIAS=7
+    fi
+
+    LIMITE_DATA=$(date -d "$DIAS days ago" +%Y-%m-%d 2>/dev/null)
+    LIMITE_EPOCH=$(date -d "$LIMITE_DATA" +%s 2>/dev/null)
+    if [ -z "$LIMITE_EPOCH" ]; then
+        log "erro: nao foi possivel calcular data de retencao"
+        return 1
+    fi
+
+    find "$BKP_DIR" -mindepth 2 -maxdepth 2 -type d -name "????????" | while read d; do
+        PASTA_DATA="${d##*/}"
+
+        if ! [[ "$PASTA_DATA" =~ ^[0-9]{8}$ ]]; then
+            continue
+        fi
+
+        DIA="${PASTA_DATA:0:2}"
+        MES="${PASTA_DATA:2:2}"
+        ANO="${PASTA_DATA:4:4}"
+        PASTA_EPOCH=$(date -d "${ANO}-${MES}-${DIA}" +%s 2>/dev/null)
+
+        if [ -z "$PASTA_EPOCH" ]; then
+            log "ignorando pasta com data invalida: $d"
+            continue
+        fi
+
+        if [ "$PASTA_EPOCH" -lt "$LIMITE_EPOCH" ]; then
+            log "removendo pasta antiga: $d"
+            rm -rf "$d"
+        fi
     done
+}
+
+sincroniza_destino() {
+    RCLONE_DEST="carbonita-l:dr/bkp/configs/router/"
+
+    log "sincronizando destino rclone: $RCLONE_DEST"
+    RCLONE_OUTPUT=$(rclone sync "$BKP_DIR" "$RCLONE_DEST" 2>&1)
+    RCLONE_STATUS=$?
+
+    if [ -n "$RCLONE_OUTPUT" ]; then
+        while IFS= read -r linha; do
+            [ -n "$linha" ] && log "rclone: $linha"
+        done <<< "$RCLONE_OUTPUT"
+    fi
+
+    if [ $RCLONE_STATUS -ne 0 ]; then
+        log "erro: rclone sync falhou com codigo $RCLONE_STATUS"
+        return $RCLONE_STATUS
+    fi
+
+    log "rclone sync concluido"
+    return 0
 }
 
 processa_conf() {
 
     RETENCAO=7
     RETRY=2
+    STATUS=0
 
     CURRENT_HOST=""
     IP=""
@@ -127,9 +181,10 @@ processa_conf() {
         if [[ "$linha" =~ ^\[.*\]$ ]]; then
 
             if [ -n "$CURRENT_HOST" ] && [ -n "$IP" ] && [ -n "$USER" ] && [ -n "$PASS" ]; then
-                executa_backup "$CURRENT_HOST" "$IP" "$USER" "$PASS" "$RETRY" "$PORT"
+                executa_backup "$CURRENT_HOST" "$IP" "$USER" "$PASS" "$RETRY" "$PORT" || STATUS=1
             elif [ -n "$CURRENT_HOST" ]; then
                 log "[$CURRENT_HOST] erro: configuracao incompleta (ip/user/pass)"
+                STATUS=1
             fi
 
             CURRENT_HOST=$(echo "$linha" | tr -d '[]')
@@ -164,12 +219,14 @@ processa_conf() {
     done 3< "$CONF_FILE"
 
     if [ -n "$CURRENT_HOST" ] && [ -n "$IP" ] && [ -n "$USER" ] && [ -n "$PASS" ]; then
-        executa_backup "$CURRENT_HOST" "$IP" "$USER" "$PASS" "$RETRY" "$PORT"
+        executa_backup "$CURRENT_HOST" "$IP" "$USER" "$PASS" "$RETRY" "$PORT" || STATUS=1
     elif [ -n "$CURRENT_HOST" ]; then
         log "[$CURRENT_HOST] erro: configuracao incompleta (ip/user/pass)"
+        STATUS=1
     fi
 
-    retencao "$RETENCAO"
+    retencao "$RETENCAO" || STATUS=1
+    return $STATUS
 }
 
 # MAIN
@@ -182,4 +239,14 @@ fi
 
 log "inicio do backup"
 processa_conf
+PROCESSA_STATUS=$?
+
+sincroniza_destino
+RCLONE_STATUS=$?
+
+if [ $PROCESSA_STATUS -ne 0 ] || [ $RCLONE_STATUS -ne 0 ]; then
+    log "fim do backup com erro"
+    exit 1
+fi
+
 log "fim do backup"
