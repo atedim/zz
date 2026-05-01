@@ -1,0 +1,111 @@
+2026-04-27 10:42:48 - erro: conf nao encontrado
+2026-04-27 10:43:12 - inicio do backup
+2026-04-27 10:43:12 - [matriz] tentativa 1
+2026-04-27 10:43:12 - [matriz] nenhum arquivo de backup encontrado
+2026-04-27 10:43:12 - [ambar] tentativa 1
+2026-04-27 10:43:13 - [ambar] nenhum arquivo de backup encontrado
+2026-04-27 10:43:13 - aplicando retencao: 7 dias
+2026-04-27 10:43:13 - fim do backup
+2026-04-27 10:43:51 - inicio do backup
+2026-04-27 10:43:51 - [matriz] tentativa 1
+2026-04-27 10:43:52 - [matriz] baixando 12:00:05
+2026-04-27 10:43:52 - [matriz] erro ao baixar 12:00:05
+2026-04-27 10:43:54 - [matriz] tentativa 2
+2026-04-27 10:43:54 - [matriz] baixando 12:00:05
+2026-04-27 10:43:54 - [matriz] erro ao baixar 12:00:05
+2026-04-27 10:43:56 - [matriz] falha apos 2 tentativas
+2026-04-27 10:43:56 - [ambar] tentativa 1
+2026-04-27 10:43:56 - [ambar] nenhum arquivo de backup encontrado
+2026-04-27 10:43:56 - aplicando retencao: 7 dias
+2026-04-27 10:43:56 - fim do backup
+2026-04-27 10:44:02 - inicio do backup
+2026-04-27 10:44:02 - [matriz] tentativa 1
+2026-04-27 10:44:02 - [matriz] baixando 12:00:05
+2026-04-27 10:44:02 - [matriz] erro ao baixar 12:00:05
+2026-04-27 10:44:04 - [matriz] tentativa 2
+2026-04-27 10:44:04 - [matriz] baixando 12:00:05
+2026-04-27 10:44:05 - [matriz] erro ao baixar 12:00:05
+2026-04-27 10:44:07 - [matriz] falha apos 2 tentativas
+2026-04-27 10:44:07 - [ambar] tentativa 1
+2026-04-27 10:44:07 - [ambar] nenhum arquivo de backup encontrado
+2026-04-27 10:44:07 - aplicando retencao: 7 dias
+2026-04-27 10:44:07 - fim do backup
+2026-04-27 10:45:47 - inicio do backup
+2026-04-27 10:45:47 - [matriz] tentativa 1
+2026-04-27 10:45:47 - [matriz] baixando MatrizMAIN_Backup_12_00_00.backup
+2026-04-27 10:45:47 - [matriz] erro ao baixar MatrizMAIN_Backup_12_00_00.backup
+2026-04-27 10:45:49 - [matriz] tentativa 2
+2026-04-27 10:45:50 - [matriz] baixando MatrizMAIN_Backup_12_00_00.backup
+2026-04-27 10:45:50 - [matriz] erro ao baixar MatrizMAIN_Backup_12_00_00.backup
+2026-04-27 10:45:52 - [matriz] falha apos 2 tentativas
+2026-04-27 10:45:52 - [ambar] tentativa 1
+2026-04-27 10:45:53 - [ambar] nenhum arquivo de backup encontrado
+2026-04-27 10:45:53 - aplicando retencao: 7 dias
+2026-04-27 10:45:53 - fim do backup
+2026-04-27 10:46:24 - inicio do backup
+2026-04-27 10:46:24 - [matriz] tentativa 1
+2026-04-27 10:46:24 - [matriz] baixando MatrizMAIN_Backup_12_00_00.backup
+2026-04-27 10:46:24 - [matriz] baixando type
+2026-04-27 10:46:24 - [matriz] erro ao baixar type
+2026-04-27 10:46:26 - [matriz] tentativa 2
+2026-04-27 10:46:26 - [matriz] baixando MatrizMAIN_Backup_12_00_00.backup
+2026-04-27 10:46:26 - [matriz] baixando type
+2026-04-27 10:46:26 - [matriz] erro ao baixar type
+2026-04-27 10:46:28 - [matriz] falha apos 2 tentativas
+2026-04-27 10:46:28 - [ambar] tentativa 1
+2026-04-27 10:46:29 - [ambar] nenhum arquivo de backup encontrado
+2026-04-27 10:46:29 - aplicando retencao: 7 dias
+2026-04-27 10:46:29 - fim do backup
+2026-04-27 10:48:24 - inicio do backup
+2026-04-27 10:48:24 - [matriz] tentativa 1
+2026-04-27 10:48:25 - [matriz] baixando MatrizMAIN_Backup_12_00_00.backup
+2026-04-27 10:48:25 - [matriz] baixando MatrizMAIN_Backup_00_00_00.backup
+2026-04-27 10:48:25 - [matriz] download de backups concluido
+2026-04-27 10:48:25 - [ambar] tentativa 1
+2026-04-27 10:48:26 - [ambar] nenhum arquivo de backup encontrado
+2026-04-27 10:48:26 - aplicando retencao: 7 dias
+2026-04-27 10:48:26 - fim do backup
+2026-04-27 10:57:32 - inicio do backup
+2026-04-27 10:57:32 - [matriz] tentativa 1
+2026-04-27 10:57:32 - [matriz] baixando MatrizMAIN_Backup_12_00_00.backup
+2026-04-27 10:57:32 - [matriz] baixando MatrizMAIN_Backup_00_00_00.backup
+2026-04-27 10:57:32 - [matriz] download de backups concluido
+2026-04-27 10:57:32 - [ambar] tentativa 1
+2026-04-27 10:57:33 - [ambar] nenhum arquivo de backup encontrado
+2026-04-27 10:57:33 - aplicando retencao: 7 dias
+2026-04-27 10:57:33 - fim do backup
+2026-04-27 11:00:43 - inicio do backup
+2026-04-27 11:00:43 - [matriz] tentativa 1
+2026-04-27 11:00:44 - [matriz] baixando MatrizMAIN_Backup_00_00_00.rsc
+2026-04-27 11:00:44 - [matriz] baixando MatrizMAIN_Backup_12_00_00.rsc
+2026-04-27 11:00:44 - [matriz] baixando dhcp_matriz.rsc
+2026-04-27 11:00:44 - [matriz] baixando MatrizMAIN_Backup_12_00_00.backup
+2026-04-27 11:00:44 - [matriz] baixando MatrizMAIN_Backup_00_00_00.backup
+2026-04-27 11:00:44 - [matriz] download de backups concluido
+2026-04-27 11:00:44 - [ambar] tentativa 1
+2026-04-27 11:00:45 - [ambar] nenhum arquivo de backup encontrado
+2026-04-27 11:00:45 - aplicando retencao: 7 dias
+2026-04-27 11:00:45 - fim do backup
+2026-04-27 11:07:40 - inicio do backup
+2026-04-27 11:07:40 - [matriz] tentativa 1
+2026-04-27 11:07:40 - [matriz] baixando MatrizMAIN_Backup_00_00_00.rsc
+2026-04-27 11:07:41 - [matriz] baixando MatrizMAIN_Backup_12_00_00.rsc
+2026-04-27 11:07:41 - [matriz] baixando MatrizMAIN_Backup_12_00_00.backup
+2026-04-27 11:07:41 - [matriz] baixando MatrizMAIN_Backup_00_00_00.backup
+2026-04-27 11:07:41 - [matriz] download de backups concluido
+2026-04-27 11:07:41 - [ambar] tentativa 1
+2026-04-27 11:07:42 - [ambar] nenhum arquivo de backup encontrado
+2026-04-27 11:07:42 - aplicando retencao: 7 dias
+2026-04-27 11:07:42 - fim do backup
+2026-04-27 11:19:04 - inicio do backup
+2026-04-27 11:19:04 - [matriz] tentativa 1
+2026-04-27 11:19:04 - [matriz] baixando MatrizMAIN_Backup_00_00_00.rsc
+2026-04-27 11:19:04 - [matriz] erro ao baixar MatrizMAIN_Backup_00_00_00.rsc
+2026-04-27 11:19:06 - [matriz] tentativa 2
+2026-04-27 11:19:06 - [matriz] baixando MatrizMAIN_Backup_00_00_00.rsc
+2026-04-27 11:19:06 - [matriz] erro ao baixar MatrizMAIN_Backup_00_00_00.rsc
+2026-04-27 11:19:08 - [matriz] falha apos 2 tentativas
+2026-04-27 11:19:08 - [ambar] tentativa 1
+2026-04-27 11:19:10 - [ambar] nenhum arquivo de backup encontrado
+2026-04-27 11:19:10 - aplicando retencao: 7 dias
+2026-04-27 11:19:10 - fim do backup
