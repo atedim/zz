@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# =====================================================================
+# Função: cria_pasta_data
+# Uso: cria_pasta_data <prefixo> <localidade>
+# Cria pasta no formato MMAAAA dentro da localidade
+# e retorna o caminho completo
+# =====================================================================
+cria_pasta_data() {
+    local prefixo="$1"
+    local localidade="$2"
+
+    # Atualizar data/hora (ajuste se necessário)
+    ntpdate -u pool.ntp.org >/dev/null 2>&1
+
+    # Usa o dia anterior como referência para manter o mesmo padrao
+    # dos backups coletados/processados na manha seguinte.
+    local mes=$(date -d 'yesterday' +%m)
+    local ano=$(date -d 'yesterday' +%Y)
+
+    # Montar nome da pasta
+    local nome_pasta="${mes}${ano}"
+
+    # Criar pasta
+    mkdir -p "${localidade}/${nome_pasta}"
+
+    # Retornar caminho da pasta
+    echo "${localidade}/${nome_pasta}"
+}
+
+
+# =====================================================================
+# Variáveis do backup
+# =====================================================================
+origem="/dr/teste/hk"
+destino=$(cria_pasta_data "HK" "/dr/bkp/matriz/anuais/HK/2026")
+data_hora=$(date +%Y%m%d_%H%M%S)
+nome_base="HK_${data_hora}"
+
+echo "Origem definida em: $origem"
+echo "Destino definido em: $destino"
+
+
+# =====================================================================
+# Validações
+# =====================================================================
+if [[ ! -d "$origem" ]]; then
+    echo "Erro: pasta de origem '$origem' não existe."
+    exit 1
+fi
+
+if [[ ! -d "$destino" ]]; then
+    echo "Erro: pasta de destino '$destino' não existe."
+    exit 1
+fi
+
+
+# =====================================================================
+# Compressão
+# Preferência: zstd, rápido e eficiente. Fallback: gzip.
+# =====================================================================
+origem_pai=$(dirname "$origem")
+origem_nome=$(basename "$origem")
+
+if command -v zstd >/dev/null 2>&1; then
+    arquivo_final="${destino}/${nome_base}.tar.zst"
+    arquivo_tmp="${arquivo_final}.tmp"
+
+    echo "Compactando com zstd: $arquivo_final"
+    tar -I 'zstd -T0 -3' -cf "$arquivo_tmp" -C "$origem_pai" "$origem_nome"
+else
+    arquivo_final="${destino}/${nome_base}.tar.gz"
+    arquivo_tmp="${arquivo_final}.tmp"
+
+    echo "zstd não encontrado. Compactando com gzip: $arquivo_final"
+    tar -czf "$arquivo_tmp" -C "$origem_pai" "$origem_nome"
+fi
+
+if [[ $? -ne 0 ]]; then
+    echo "Erro: falha ao compactar '$origem'."
+    rm -f -- "$arquivo_tmp"
+    exit 1
+fi
+
+mv -f -- "$arquivo_tmp" "$arquivo_final"
+
+echo "Backup criado com sucesso: $arquivo_final"

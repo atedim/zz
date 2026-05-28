@@ -1,12 +1,95 @@
 #!/bin/bash
 
 # =====================================================================
-# Backup simples da pasta HK sem versionamento
+# Backup da pasta HK com sincronizacao local e compactacao mensal
 # Origem: \\192.168.1.5\dados\HK
-# Destino: \\192.168.0.5\dr\teste\hk
+# Staging: \\192.168.0.5\dr\teste\hk
+# Destino dos pacotes: \\192.168.0.5\dr\bkp\matriz\anuais\HK\2026\MMAAAA
 # =====================================================================
 
-# Atualizar data/hora (ajuste se necessário)
+# =====================================================================
+# Funcao: cria_pasta_data
+# Uso: cria_pasta_data <prefixo> <localidade>
+# Cria pasta no formato MMAAAA dentro da localidade
+# e retorna o caminho completo
+# =====================================================================
+cria_pasta_data() {
+    local prefixo="$1"
+    local localidade="$2"
+
+    # Atualizar data/hora (ajuste se necessario)
+    ntpdate -u pool.ntp.org >/dev/null 2>&1
+
+    # Usa o dia anterior como referencia para manter o mesmo padrao
+    # dos backups coletados/processados na manha seguinte.
+    local mes=$(date -d 'yesterday' +%m)
+    local ano=$(date -d 'yesterday' +%Y)
+
+    # Montar nome da pasta
+    local nome_pasta="${mes}${ano}"
+
+    # Criar pasta
+    mkdir -p "${localidade}/${nome_pasta}"
+
+    # Retornar caminho da pasta
+    echo "${localidade}/${nome_pasta}"
+}
+
+
+# =====================================================================
+# Funcao: compacta_pasta
+# Compacta a pasta informada usando zstd quando disponivel.
+# Fallback: gzip mantendo o mesmo padrao de nome, sem hora.
+# =====================================================================
+compacta_pasta() {
+    local origem_compactacao="$1"
+    local destino_compactacao="$2"
+    local prefixo_arquivo="$3"
+    local periodo prefixo_nome arquivo_final arquivo_tmp origem_pai origem_nome
+
+    if [[ ! -d "$origem_compactacao" ]]; then
+        echo "Erro: pasta de origem '$origem_compactacao' nao existe."
+        return 1
+    fi
+
+    if [[ ! -d "$destino_compactacao" ]]; then
+        echo "Erro: pasta de destino '$destino_compactacao' nao existe."
+        return 1
+    fi
+
+    periodo=$(basename "$destino_compactacao")
+    prefixo_nome=$(echo "$prefixo_arquivo" | tr '[:upper:]' '[:lower:]')
+    origem_pai=$(dirname "$origem_compactacao")
+    origem_nome=$(basename "$origem_compactacao")
+
+    if command -v zstd >/dev/null 2>&1; then
+        arquivo_final="${destino_compactacao}/${prefixo_nome} ${periodo}.tar.zst"
+        arquivo_tmp="${arquivo_final}.tmp"
+
+        echo "Compactando com zstd: $arquivo_final"
+        tar -I 'zstd -T0 -3' -cf "$arquivo_tmp" -C "$origem_pai" "$origem_nome"
+    else
+        arquivo_final="${destino_compactacao}/${prefixo_nome} ${periodo}.tar.gz"
+        arquivo_tmp="${arquivo_final}.tmp"
+
+        echo "zstd nao encontrado. Compactando com gzip: $arquivo_final"
+        tar -czf "$arquivo_tmp" -C "$origem_pai" "$origem_nome"
+    fi
+
+    if [[ $? -ne 0 ]]; then
+        echo "Erro: falha ao compactar '$origem_compactacao'."
+        rm -f -- "$arquivo_tmp"
+        return 1
+    fi
+
+    mv -f -- "$arquivo_tmp" "$arquivo_final"
+
+    echo "Backup criado com sucesso: $arquivo_final"
+    return 0
+}
+
+
+# Atualizar data/hora (ajuste se necessario)
 ntpdate -u pool.ntp.org >/dev/null 2>&1
 
 # =====================================================================
@@ -16,9 +99,10 @@ ntpdate -u pool.ntp.org >/dev/null 2>&1
 # =====================================================================
 origem=":smb,host=192.168.1.5,share=dados:/HK"
 destino="/dr/teste/hk"
+destino_bkp=$(cria_pasta_data "HK" "/dr/bkp/matriz/anuais/HK/2026")
 retry="--retries 3"
 lowretry="--low-level-retries 10"
-transf="--transfers 4"
+transf="--transfers 3"
 ordem="--order-by size"
 timeout="--timeout 1h"
 multi="--multi-thread-streams 0"
@@ -34,17 +118,34 @@ fi
 echo "Sincronizando HK..."
 echo "Origem:  \\\\192.168.1.5\\dados\\HK"
 echo "Destino: /dr/teste/hk"
+echo "Destino backup compactado: $destino_bkp"
 
 mkdir -p "$destino"
 
 rclone sync "$origem" "$destino" -P $retry $lowretry $transf $ordem --stats 1s $timeout $multi $preserva_flag
 
-status=$?
+status_sync=$?
 
-if [ $status -eq 0 ]; then
+if [ $status_sync -eq 0 ]; then
     echo "Sincronizacao concluida com sucesso."
 else
-    echo "Erro na sincronizacao. Codigo de retorno: $status"
+    echo "Erro na sincronizacao. Codigo de retorno: $status_sync"
+    echo "Seguindo para compactacao do conteudo local existente em: $destino"
 fi
 
-exit $status
+compacta_pasta "$destino" "$destino_bkp" "HK"
+
+status_compactacao=$?
+
+if [ $status_compactacao -eq 0 ]; then
+    if [ $status_sync -eq 0 ]; then
+        echo "Processo HK concluido com sucesso."
+    else
+        echo "Compactacao concluida, mas a sincronizacao teve erro. Codigo de retorno: $status_sync"
+    fi
+else
+    echo "Erro na compactacao. Codigo de retorno: $status_compactacao"
+    exit $status_compactacao
+fi
+
+exit $status_sync

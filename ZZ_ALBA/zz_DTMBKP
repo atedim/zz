@@ -3,7 +3,7 @@
 # =====================================================================
 # Função: cria_pasta_data
 # Uso: cria_pasta_data <prefixo> <localidade>
-# Cria pasta no formato prefixoMMAAAA dentro da localidade
+# Cria pasta no formato MMAAAA dentro da localidade
 # e retorna o caminho completo
 # =====================================================================
 cria_pasta_data() {
@@ -20,7 +20,7 @@ cria_pasta_data() {
     local ano=$(date -d 'yesterday' +%Y)
 
     # Montar nome da pasta
-    local nome_pasta="${prefixo}${mes}${ano}"
+    local nome_pasta="${mes}${ano}"
 
     # Criar pasta
     mkdir -p "${localidade}/${nome_pasta}"
@@ -32,7 +32,7 @@ cria_pasta_data() {
 # =====================================================================
 # Exemplo de uso
 # =====================================================================
-destino=$(cria_pasta_data "DTM" "/dr/teste/dtm")
+destino=$(cria_pasta_data "DTM" "/dr/bkp/matriz/anuais/DTM/2026")
 
 echo "Destino definido em: $destino"
 
@@ -60,13 +60,74 @@ else
     preserva_flag=""
 fi
 
-# Executa o rclone com o destino dinâmico
-rclone sync "$perfil" "$destino" -P $periodo $retry $lowretry $transf $ordem --stats 1s $timeout $multi $excluir $preserva_flag
+# Executa o rclone com o destino dinâmico.
+# Como este destino guarda historico mensal, usamos copy: a limpeza abaixo
+# decide o que sai e o que fica.
+rclone copy "$perfil" "$destino" -P $periodo $retry $lowretry $transf $ordem --stats 1s $timeout $multi $excluir $preserva_flag
 
 
-# Limpa antigos
-find $destino -type f -ctime $manter -exec rm {} \;
-find $destino -type f -mtime $manter -exec rm {} \;
+# =====================================================================
+# Função: limpa_antigos_preservando_mensais
+# Mantem o ultimo FULL e o ultimo DIFF do periodo mensal.
+# =====================================================================
+limpa_antigos_preservando_mensais() {
+    local pasta="$1"
+    local manter="$2"
+    local ultimo_full=""
+    local ultimo_full_data=""
+    local ultimo_diff=""
+    local ultimo_diff_data=""
+    local arq nome tipo data hora stamp
+
+    if [[ ! -d "$pasta" ]]; then
+        echo "Erro: pasta '$pasta' não existe."
+        return 1
+    fi
+
+    for arq in "$pasta"/*; do
+        [[ -f "$arq" ]] || continue
+        nome=$(basename "$arq")
+        tipo=""; data=""; hora=""
+
+        if [[ "$nome" =~ ^ALBATROZ_[A-Z]{3}_(FULL|DIFF)_([0-9]{8})_([0-9]{6})\.bak$ ]]; then
+            tipo="${BASH_REMATCH[1]}"
+            data="${BASH_REMATCH[2]}"
+            hora="${BASH_REMATCH[3]}"
+        elif [[ "$nome" =~ ^SQL_(FULL|DIFF)_([0-9]{4})-([0-9]{2})-([0-9]{2})[[:space:]]([0-9]{2})-([0-9]{2})-([0-9]{2})\.bak$ ]]; then
+            tipo="${BASH_REMATCH[1]}"
+            data="${BASH_REMATCH[2]}${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
+            hora="${BASH_REMATCH[5]}${BASH_REMATCH[6]}${BASH_REMATCH[7]}"
+        fi
+
+        [[ -n "$tipo" ]] || continue
+        stamp="${data}${hora}"
+
+        if [[ "$tipo" = "FULL" && "$stamp" > "$ultimo_full_data" ]]; then
+            ultimo_full_data="$stamp"
+            ultimo_full="$arq"
+        elif [[ "$tipo" = "DIFF" && "$stamp" > "$ultimo_diff_data" ]]; then
+            ultimo_diff_data="$stamp"
+            ultimo_diff="$arq"
+        fi
+    done
+
+    [[ -n "$ultimo_full" ]] && echo "Preservando FULL mensal: $(basename "$ultimo_full")"
+    [[ -n "$ultimo_diff" ]] && echo "Preservando DIFF mensal: $(basename "$ultimo_diff")"
+
+    while IFS= read -r -d '' arq; do
+        if [[ "$arq" = "$ultimo_full" || "$arq" = "$ultimo_diff" ]]; then
+            echo "Mantido: $(basename "$arq")"
+            continue
+        fi
+
+        rm -f -- "$arq"
+        echo "Removido antigo: $(basename "$arq")"
+    done < <(find "$pasta" -type f \( -ctime "$manter" -o -mtime "$manter" \) -print0)
+}
+
+
+# Limpa antigos preservando o fechamento mensal
+limpa_antigos_preservando_mensais "$destino" "$manter"
 
 
 
@@ -90,6 +151,9 @@ renomeia_arquivos() {
         ano=""; mes=""; dia=""; hora=""; min=""; seg=""
 
         case "$nome" in
+            ALBATROZ_[A-Z][A-Z][A-Z]_FULL_*|ALBATROZ_[A-Z][A-Z][A-Z]_DIFF_*)
+                continue
+                ;;
             ALBATROZ_backup_*)
                 if [[ "$nome" =~ ^ALBATROZ_backup_([0-9]{4})_([0-9]{2})_([0-9]{2})_([0-9]{2})([0-9]{2})([0-9]{2})_ ]]; then
                     prefixo="SQL"
@@ -126,5 +190,8 @@ renomeia_arquivos() {
     done
 }
 
-# Agora o destino já é reutilizado em qualquer lugar
-renomeia_arquivos "$destino"
+# Renomeacao desabilitada de forma reversivel.
+# Manter os nomes originais evita que o rclone copie novamente arquivos
+# ja baixados por nao encontrar o mesmo nome no destino.
+# Para reativar, descomente a linha abaixo:
+# renomeia_arquivos "$destino"
