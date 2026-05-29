@@ -1,0 +1,580 @@
+#!/bin/bash
+###############################################################################
+# SCRIPT: zz_cleanup
+#
+# DESCRICAO:
+#   Limpa temporarios, arquivos antigos e diretorios vazios em um diretorio alvo.
+#
+# ORDEM DE EXECUCAO:
+#   1) Limpeza de temporarios por tipos/padroes
+#   2) Limpeza de arquivos antigos por DATA_CORTE ou DAYS_OLD
+#   3) Limpeza final de diretorios vazios em profundidade
+#
+# CRITERIO DE ARQUIVOS ANTIGOS:
+#   1) DATA_CORTE fixa, no formato DD/MM/YYYY, quando preenchida
+#   2) DAYS_OLD, quando DATA_CORTE estiver vazia
+#
+# MODOS:
+#   log     | l  -> Apenas registra o que seria afetado, sem remover
+#   silent  | s  -> Remove normalmente, sem output no terminal
+#   verbose | v  -> Remove normalmente, mostrando as acoes
+#   cron    | fs -> Executa fluxo completo sem output no terminal, com logs
+#   help    | h  -> Exibe ajuda
+#
+###############################################################################
+
+############################
+# VARIAVEIS CONFIGURAVEIS
+############################
+
+: "${DEFAULT_TARGET_DIR:=/dr/bkp/filiais}"
+: "${EXCLUDE_DIR:=/dr/bkp/matriz}"
+
+# Data fixa de corte (DD/MM/YYYY). Quando preenchida, DAYS_OLD e ignorado.
+: "${DATA_CORTE:=}"
+
+# Quantidade de dias para arquivos antigos, usada apenas se DATA_CORTE estiver vazia.
+: "${DAYS_OLD:=1000}"
+
+# Idade minima, em dias, para arquivos temporarios por tipo.
+: "${TEMP_DAYS:=3}"
+
+: "${LOG_BASE_DIR:=/var/log/zz_cleanup}"
+
+############################
+# TIPOS TEMPORARIOS
+############################
+
+TEMP_LABELS=("tmp" "backup_tilde" "atalho_lnk")
+TEMP_MATCH_OPS=("-iname" "-name" "-iname")
+TEMP_PATTERNS=("*.tmp" "~*" "*.lnk")
+
+ZERO_FILE_PATTERN="Novo(a)*"
+EMPTY_DIR_PATTERN="Nova pasta*"
+
+############################
+# VARIAVEIS INTERNAS
+############################
+
+MODE="normal"
+SHOW_OUTPUT=1
+RUN_PROFILE="manual"
+RUN_ACTION="full"
+RUN_TEMP=1
+RUN_OLD=1
+RUN_EMPTY=1
+USE_DATE_MODE=0
+CUT_EPOCH=""
+HAD_ERRORS=0
+TARGET_DIR=""
+LOG_FILE=""
+
+TEMP_CANDIDATES=0
+TEMP_CANDIDATE_BYTES=0
+TEMP_REMOVED=0
+TEMP_REMOVED_BYTES=0
+TEMP_LISTED=0
+TEMP_LISTED_BYTES=0
+TEMP_ERRORS=0
+
+OLD_CANDIDATES=0
+OLD_CANDIDATE_BYTES=0
+OLD_REMOVED=0
+OLD_REMOVED_BYTES=0
+OLD_LISTED=0
+OLD_LISTED_BYTES=0
+OLD_ERRORS=0
+
+EMPTY_DIR_CANDIDATES=0
+EMPTY_DIR_REMOVED=0
+EMPTY_DIR_LISTED=0
+EMPTY_DIR_ERRORS=0
+
+############################
+# FUNCOES BASICAS
+############################
+
+show_help() {
+    echo "USO:"
+    echo "  $0 [modo] [acao] [diretorio]"
+    echo
+    echo "EXEMPLOS:"
+    echo "  $0"
+    echo "  $0 log"
+    echo "  $0 temp log"
+    echo "  $0 old verbose /dr/bkp/filiais"
+    echo "  $0 empty silent /dr/bkp/filiais"
+    echo "  $0 cron"
+    echo
+    echo "ORDEM:"
+    echo "  1) Temporarios: *.tmp, ~*, *.lnk, Novo(a)* vazio, Nova pasta* vazia"
+    echo "  2) Arquivos antigos: DATA_CORTE ou DAYS_OLD"
+    echo "  3) Pastas vazias finais em profundidade"
+    echo
+    echo "CRITERIO DE ARQUIVOS ANTIGOS:"
+    echo "  DATA_CORTE preenchida prevalece sobre DAYS_OLD."
+    echo "  DATA_CORTE vazia faz o script usar DAYS_OLD."
+    echo
+    echo "MODOS:"
+    echo "  log | l              Apenas registra, sem remover."
+    echo "  silent | s           Remove sem output no terminal."
+    echo "  verbose | v          Remove mostrando acoes."
+    echo "  cron | full-silent | fs"
+    echo "                       Executa full silencioso com logs, indicado para crontab."
+    echo "  help | h             Mostra esta ajuda."
+    echo
+    echo "ACOES:"
+    echo "  full | all | completo       Executa as 3 etapas."
+    echo "  temp | temps | temporarios  Executa apenas temporarios."
+    echo "  old | antigos               Executa apenas arquivos antigos."
+    echo "  empty | pastas | vazias     Executa apenas pastas vazias."
+    echo
+    echo "LOG:"
+    echo "  Diretorio: $LOG_BASE_DIR"
+    echo "  Formato: cleanup_DDMMAAAA_HHMMSS_PID.log"
+    echo
+    exit 0
+}
+
+log_msg() {
+    echo "$(date '+%d/%m/%Y %H:%M:%S') - $1" >> "$LOG_FILE"
+    [ "$SHOW_OUTPUT" -eq 1 ] && echo "$1"
+}
+
+log_section() {
+    echo "" >> "$LOG_FILE"
+    echo "===== $1 =====" >> "$LOG_FILE"
+    [ "$SHOW_OUTPUT" -eq 1 ] && echo "===== $1 ====="
+}
+
+validate_date() {
+    date -d "$1" "+%Y-%m-%d" >/dev/null 2>&1
+}
+
+is_excluded_path() {
+    local PATH_TO_CHECK="$1"
+    [[ "$PATH_TO_CHECK" == "$EXCLUDE_DIR" || "$PATH_TO_CHECK" == "$EXCLUDE_DIR"/* ]]
+}
+
+file_size() {
+    stat -c %s "$1" 2>/dev/null || echo 0
+}
+
+human_bytes() {
+    awk -v bytes="$1" 'BEGIN {
+        split("B KB MB GB TB", unit, " ");
+        size = bytes + 0;
+        idx = 1;
+        while (size >= 1024 && idx < 5) {
+            size = size / 1024;
+            idx++;
+        }
+        printf "%.2f %s", size, unit[idx];
+    }'
+}
+
+############################
+# PARAMETROS E VALIDACOES
+############################
+
+parse_args() {
+    local ARG
+    local TARGET_SET=0
+
+    while [ "$#" -gt 0 ]; do
+        ARG="$1"
+
+        case "$ARG" in
+            log|l|--log|--dry-run)
+                MODE="log"
+                ;;
+            silent|s|--silent)
+                MODE="silent"
+                SHOW_OUTPUT=0
+                ;;
+            verbose|v|--verbose)
+                MODE="verbose"
+                SHOW_OUTPUT=1
+                ;;
+            cron|full-silent|fs|--cron|--full-silent)
+                MODE="silent"
+                SHOW_OUTPUT=0
+                RUN_PROFILE="cron"
+                set_run_action "full"
+                ;;
+            full|all|completo|--full|--all)
+                set_run_action "full"
+                ;;
+            temp|temps|temporarios|temporario|--temp|--temps)
+                set_run_action "temp"
+                ;;
+            old|antigos|antigo|idade|--old)
+                set_run_action "old"
+                ;;
+            empty|pastas|vazias|vazia|--empty)
+                set_run_action "empty"
+                ;;
+            help|h|--help|-h)
+                show_help
+                ;;
+            *)
+                if [ "$TARGET_SET" -eq 0 ]; then
+                    TARGET_DIR="$ARG"
+                    TARGET_SET=1
+                else
+                    echo "Opcao invalida ou argumento duplicado: $ARG"
+                    show_help
+                fi
+                ;;
+        esac
+
+        shift
+    done
+
+    TARGET_DIR="${TARGET_DIR:-$DEFAULT_TARGET_DIR}"
+}
+
+set_run_action() {
+    case "$1" in
+        full)
+            RUN_ACTION="full"
+            RUN_TEMP=1
+            RUN_OLD=1
+            RUN_EMPTY=1
+            ;;
+        temp)
+            RUN_ACTION="temp"
+            RUN_TEMP=1
+            RUN_OLD=0
+            RUN_EMPTY=0
+            ;;
+        old)
+            RUN_ACTION="old"
+            RUN_TEMP=0
+            RUN_OLD=1
+            RUN_EMPTY=0
+            ;;
+        empty)
+            RUN_ACTION="empty"
+            RUN_TEMP=0
+            RUN_OLD=0
+            RUN_EMPTY=1
+            ;;
+    esac
+}
+
+validate_initial_state() {
+    [ -d "$TARGET_DIR" ] || { echo "Diretorio alvo invalido: $TARGET_DIR"; exit 1; }
+    mkdir -p "$LOG_BASE_DIR" || { echo "Falha ao criar diretorio de log: $LOG_BASE_DIR"; exit 1; }
+
+    local TIMESTAMP
+    TIMESTAMP="$(date +%d%m%Y_%H%M%S)_$$"
+    LOG_FILE="$LOG_BASE_DIR/cleanup_${TIMESTAMP}.log"
+
+    if [ "$RUN_OLD" -eq 1 ]; then
+        if [ -n "$DATA_CORTE" ]; then
+            local DATA_FMT
+            DATA_FMT="$(echo "$DATA_CORTE" | awk -F'/' '{print $3 "-" $2 "-" $1}')"
+
+            if ! validate_date "$DATA_FMT"; then
+                log_msg "ERRO: DATA_CORTE invalida. Esperado DD/MM/YYYY."
+                exit 1
+            fi
+
+            CUT_EPOCH=$(date -d "$DATA_FMT" +%s)
+
+            if [ "$CUT_EPOCH" -gt "$(date +%s)" ]; then
+                log_msg "ERRO: DATA_CORTE esta no futuro ($DATA_CORTE)."
+                exit 1
+            fi
+
+            if [ "$CUT_EPOCH" -lt "$(date -d "1970-01-01" +%s)" ]; then
+                log_msg "ERRO: DATA_CORTE anterior a 1970 ($DATA_CORTE)."
+                exit 1
+            fi
+
+            USE_DATE_MODE=1
+        else
+            if ! [[ "$DAYS_OLD" =~ ^[1-9][0-9]*$ ]]; then
+                log_msg "ERRO: DAYS_OLD precisa ser um numero inteiro positivo."
+                exit 1
+            fi
+        fi
+    fi
+
+    if [ "$RUN_TEMP" -eq 1 ]; then
+        if ! [[ "$TEMP_DAYS" =~ ^[0-9]+$ ]]; then
+            log_msg "ERRO: TEMP_DAYS precisa ser um numero inteiro maior ou igual a zero."
+            exit 1
+        fi
+    fi
+}
+
+############################
+# ESTATISTICAS
+############################
+
+scan_temp_files_by_pattern() {
+    local OP="$1"
+    local PATTERN="$2"
+    local FILE
+
+    while IFS= read -r -d '' FILE; do
+        is_excluded_path "$FILE" && continue
+        printf '%s\0' "$FILE"
+    done < <(find "$TARGET_DIR" \( -path "$EXCLUDE_DIR" -o -path "$EXCLUDE_DIR/*" \) -prune -o -type f "$OP" "$PATTERN" -mtime +"$TEMP_DAYS" -print0)
+}
+
+scan_zero_temp_files() {
+    local FILE
+
+    while IFS= read -r -d '' FILE; do
+        is_excluded_path "$FILE" && continue
+        printf '%s\0' "$FILE"
+    done < <(find "$TARGET_DIR" \( -path "$EXCLUDE_DIR" -o -path "$EXCLUDE_DIR/*" \) -prune -o -type f -name "$ZERO_FILE_PATTERN" -size 0 -print0)
+}
+
+scan_named_empty_dirs() {
+    local DIR
+
+    while IFS= read -r -d '' DIR; do
+        is_excluded_path "$DIR" && continue
+        printf '%s\0' "$DIR"
+    done < <(find "$TARGET_DIR" -mindepth 1 -depth -type d -name "$EMPTY_DIR_PATTERN" -empty ! -path "$EXCLUDE_DIR" ! -path "$EXCLUDE_DIR/*" -print0)
+}
+
+log_temp_stats_snapshot() {
+    local TITLE="$1"
+    local I
+    local FILE
+    local COUNT
+    local BYTES
+    local SIZE
+
+    log_section "$TITLE"
+
+    for I in "${!TEMP_LABELS[@]}"; do
+        COUNT=0
+        BYTES=0
+
+        while IFS= read -r -d '' FILE; do
+            SIZE=$(file_size "$FILE")
+            COUNT=$((COUNT + 1))
+            BYTES=$((BYTES + SIZE))
+        done < <(scan_temp_files_by_pattern "${TEMP_MATCH_OPS[$I]}" "${TEMP_PATTERNS[$I]}")
+
+        log_msg "TEMP ${TEMP_LABELS[$I]} (${TEMP_PATTERNS[$I]}): $COUNT arquivo(s), $(human_bytes "$BYTES")"
+    done
+
+    COUNT=0
+    BYTES=0
+    while IFS= read -r -d '' FILE; do
+        SIZE=$(file_size "$FILE")
+        COUNT=$((COUNT + 1))
+        BYTES=$((BYTES + SIZE))
+    done < <(scan_zero_temp_files)
+    log_msg "TEMP arquivo vazio ($ZERO_FILE_PATTERN): $COUNT arquivo(s), $(human_bytes "$BYTES")"
+
+    COUNT=0
+    while IFS= read -r -d '' FILE; do
+        COUNT=$((COUNT + 1))
+    done < <(scan_named_empty_dirs)
+    log_msg "TEMP pasta vazia ($EMPTY_DIR_PATTERN): $COUNT pasta(s)"
+}
+
+log_final_stats() {
+    log_section "ESTATISTICAS FINAIS"
+    log_msg "Perfil de execucao: $RUN_PROFILE"
+    log_msg "Acao executada: $RUN_ACTION"
+    log_msg "Etapa temporarios habilitada: $RUN_TEMP"
+    log_msg "Etapa arquivos antigos habilitada: $RUN_OLD"
+    log_msg "Etapa pastas vazias habilitada: $RUN_EMPTY"
+    log_msg "Temporarios candidatos: $TEMP_CANDIDATES arquivo(s), $(human_bytes "$TEMP_CANDIDATE_BYTES")"
+    log_msg "Temporarios removidos: $TEMP_REMOVED arquivo(s), $(human_bytes "$TEMP_REMOVED_BYTES")"
+    log_msg "Temporarios listados em modo log: $TEMP_LISTED arquivo(s), $(human_bytes "$TEMP_LISTED_BYTES")"
+    log_msg "Erros em temporarios: $TEMP_ERRORS"
+    log_msg "Arquivos antigos candidatos: $OLD_CANDIDATES arquivo(s), $(human_bytes "$OLD_CANDIDATE_BYTES")"
+    log_msg "Arquivos antigos removidos: $OLD_REMOVED arquivo(s), $(human_bytes "$OLD_REMOVED_BYTES")"
+    log_msg "Arquivos antigos listados em modo log: $OLD_LISTED arquivo(s), $(human_bytes "$OLD_LISTED_BYTES")"
+    log_msg "Erros em arquivos antigos: $OLD_ERRORS"
+    log_msg "Pastas vazias candidatas: $EMPTY_DIR_CANDIDATES"
+    log_msg "Pastas vazias removidas: $EMPTY_DIR_REMOVED"
+    log_msg "Pastas vazias listadas em modo log: $EMPTY_DIR_LISTED"
+    log_msg "Erros em pastas vazias: $EMPTY_DIR_ERRORS"
+}
+
+############################
+# PROCESSAMENTO
+############################
+
+process_temp_file() {
+    local FILE="$1"
+    local LABEL="$2"
+    local SIZE
+
+    SIZE=$(file_size "$FILE")
+    TEMP_CANDIDATES=$((TEMP_CANDIDATES + 1))
+    TEMP_CANDIDATE_BYTES=$((TEMP_CANDIDATE_BYTES + SIZE))
+
+    if [ "$MODE" = "log" ]; then
+        TEMP_LISTED=$((TEMP_LISTED + 1))
+        TEMP_LISTED_BYTES=$((TEMP_LISTED_BYTES + SIZE))
+        log_msg "TEMP AFETADO [$LABEL]: $FILE ($(human_bytes "$SIZE"))"
+    elif rm -f -- "$FILE"; then
+        TEMP_REMOVED=$((TEMP_REMOVED + 1))
+        TEMP_REMOVED_BYTES=$((TEMP_REMOVED_BYTES + SIZE))
+        log_msg "TEMP REMOVIDO [$LABEL]: $FILE ($(human_bytes "$SIZE"))"
+    else
+        TEMP_ERRORS=$((TEMP_ERRORS + 1))
+        HAD_ERRORS=1
+        log_msg "ERRO AO REMOVER TEMP [$LABEL]: $FILE"
+    fi
+}
+
+cleanup_temp_files() {
+    local I
+    local FILE
+    local DIR
+
+    log_section "1) LIMPEZA DE TEMPORARIOS"
+    log_temp_stats_snapshot "TEMPORARIOS ANTES"
+
+    for I in "${!TEMP_LABELS[@]}"; do
+        log_msg "Verificando temporarios ${TEMP_LABELS[$I]} (${TEMP_PATTERNS[$I]}) com mais de $TEMP_DAYS dia(s)."
+
+        while IFS= read -r -d '' FILE; do
+            process_temp_file "$FILE" "${TEMP_LABELS[$I]}"
+        done < <(scan_temp_files_by_pattern "${TEMP_MATCH_OPS[$I]}" "${TEMP_PATTERNS[$I]}")
+    done
+
+    log_msg "Verificando arquivos vazios iniciados por $ZERO_FILE_PATTERN."
+    while IFS= read -r -d '' FILE; do
+        process_temp_file "$FILE" "arquivo_vazio"
+    done < <(scan_zero_temp_files)
+
+    log_msg "Verificando pastas vazias iniciadas por $EMPTY_DIR_PATTERN."
+    while IFS= read -r -d '' DIR; do
+        EMPTY_DIR_CANDIDATES=$((EMPTY_DIR_CANDIDATES + 1))
+
+        if [ "$MODE" = "log" ]; then
+            EMPTY_DIR_LISTED=$((EMPTY_DIR_LISTED + 1))
+            log_msg "PASTA TEMP VAZIA AFETADA: $DIR"
+        elif rmdir -- "$DIR" 2>/dev/null; then
+            EMPTY_DIR_REMOVED=$((EMPTY_DIR_REMOVED + 1))
+            log_msg "PASTA TEMP VAZIA REMOVIDA: $DIR"
+        else
+            EMPTY_DIR_ERRORS=$((EMPTY_DIR_ERRORS + 1))
+            HAD_ERRORS=1
+            log_msg "ERRO AO REMOVER PASTA TEMP VAZIA: $DIR"
+        fi
+    done < <(scan_named_empty_dirs)
+
+    log_temp_stats_snapshot "TEMPORARIOS DEPOIS"
+}
+
+process_old_file() {
+    local FILE="$1"
+    local SIZE
+
+    is_excluded_path "$FILE" && return
+    SIZE=$(file_size "$FILE")
+
+    OLD_CANDIDATES=$((OLD_CANDIDATES + 1))
+    OLD_CANDIDATE_BYTES=$((OLD_CANDIDATE_BYTES + SIZE))
+
+    if [ "$MODE" = "log" ]; then
+        OLD_LISTED=$((OLD_LISTED + 1))
+        OLD_LISTED_BYTES=$((OLD_LISTED_BYTES + SIZE))
+        log_msg "ARQUIVO ANTIGO AFETADO: $FILE ($(human_bytes "$SIZE"))"
+    elif rm -f -- "$FILE"; then
+        OLD_REMOVED=$((OLD_REMOVED + 1))
+        OLD_REMOVED_BYTES=$((OLD_REMOVED_BYTES + SIZE))
+        log_msg "ARQUIVO ANTIGO REMOVIDO: $FILE ($(human_bytes "$SIZE"))"
+    else
+        OLD_ERRORS=$((OLD_ERRORS + 1))
+        HAD_ERRORS=1
+        log_msg "ERRO AO REMOVER ARQUIVO ANTIGO: $FILE"
+    fi
+}
+
+cleanup_old_files() {
+    local FILE
+    local FILE_EPOCH
+
+    log_section "2) LIMPEZA DE ARQUIVOS ANTIGOS"
+
+    if [ "$USE_DATE_MODE" -eq 1 ]; then
+        log_msg "Criterio: DATA_CORTE=$DATA_CORTE"
+
+        while IFS= read -r -d '' FILE; do
+            FILE_EPOCH=$(stat -c %Y "$FILE" 2>/dev/null || echo 0)
+            [ "$FILE_EPOCH" -lt "$CUT_EPOCH" ] && process_old_file "$FILE"
+        done < <(find "$TARGET_DIR" \( -path "$EXCLUDE_DIR" -o -path "$EXCLUDE_DIR/*" \) -prune -o -type f -print0)
+    else
+        log_msg "Criterio: DAYS_OLD=$DAYS_OLD"
+
+        while IFS= read -r -d '' FILE; do
+            process_old_file "$FILE"
+        done < <(find "$TARGET_DIR" \( -path "$EXCLUDE_DIR" -o -path "$EXCLUDE_DIR/*" \) -prune -o -type f -mtime +"$DAYS_OLD" -print0)
+    fi
+}
+
+cleanup_empty_dirs() {
+    local DIR
+    local REMOVED_IN_PASS
+
+    log_section "3) LIMPEZA FINAL DE PASTAS VAZIAS"
+
+    while :; do
+        REMOVED_IN_PASS=0
+
+        while IFS= read -r -d '' DIR; do
+            is_excluded_path "$DIR" && continue
+            EMPTY_DIR_CANDIDATES=$((EMPTY_DIR_CANDIDATES + 1))
+
+            if [ "$MODE" = "log" ]; then
+                EMPTY_DIR_LISTED=$((EMPTY_DIR_LISTED + 1))
+                log_msg "PASTA VAZIA AFETADA: $DIR"
+            elif rmdir -- "$DIR" 2>/dev/null; then
+                EMPTY_DIR_REMOVED=$((EMPTY_DIR_REMOVED + 1))
+                REMOVED_IN_PASS=1
+                log_msg "PASTA VAZIA REMOVIDA: $DIR"
+            else
+                EMPTY_DIR_ERRORS=$((EMPTY_DIR_ERRORS + 1))
+                HAD_ERRORS=1
+                log_msg "ERRO AO REMOVER PASTA VAZIA: $DIR"
+            fi
+        done < <(find "$TARGET_DIR" -mindepth 1 -depth -type d -empty ! -path "$EXCLUDE_DIR" ! -path "$EXCLUDE_DIR/*" -print0)
+
+        [ "$MODE" = "log" ] && break
+        [ "$REMOVED_IN_PASS" -eq 0 ] && break
+    done
+}
+
+############################
+# EXECUCAO
+############################
+
+parse_args "$@"
+validate_initial_state
+
+log_section "INICIO"
+log_msg "Diretorio alvo: $TARGET_DIR"
+log_msg "Diretorio excluido: $EXCLUDE_DIR"
+log_msg "Modo: $MODE"
+log_msg "Perfil: $RUN_PROFILE"
+log_msg "Acao: $RUN_ACTION"
+log_msg "TEMP_DAYS: $TEMP_DAYS"
+log_msg "DATA_CORTE: ${DATA_CORTE:-vazia}"
+log_msg "DAYS_OLD: $DAYS_OLD"
+
+[ "$RUN_TEMP" -eq 1 ] && cleanup_temp_files
+[ "$RUN_OLD" -eq 1 ] && cleanup_old_files
+[ "$RUN_EMPTY" -eq 1 ] && cleanup_empty_dirs
+log_final_stats
+
+log_section "FINAL"
+log_msg "Fim da execucao"
+[ "$SHOW_OUTPUT" -eq 1 ] && echo "Log gerado em: $LOG_FILE"
+
+exit "$HAD_ERRORS"

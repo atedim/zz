@@ -1,0 +1,19 @@
+Aviso de Exclusão de Arquivos Antigos nas Unidades de Rede
+
+Prezados,
+
+Informamos que, a partir de 01/07/2026, será realizado um processo de limpeza diária nas unidades de rede da empresa.
+
+Durante esse processo, todos os arquivos com data de modificação superior a 2 (dois) anos serão apagados permanentemente, com o objetivo de otimizar o uso do espaço de armazenamento, melhorar o desempenho dos sistemas e manter o ambiente de dados organizado e seguro.
+
+Solicitamos que, ate a data informada, cada área revise seus arquivos e, caso necessário, realize:
+
+A copia de segurança de arquivos que ainda precisem ser mantidos;
+
+A reorganização ou atualização de documentos relevantes.
+
+Após o prazo estabelecido, os arquivos enquadrados nesse critério serão removidos automaticamente, sem possibilidade de recuperação.
+
+Em caso de duvidas ou necessidade de orientação, favor entrar em contato com a equipe de TI.
+
+Atenciosamente,
