@@ -67,123 +67,17 @@ rclone copy "$perfil" "$destino" -P $periodo $retry $lowretry $transf $ordem --s
 
 
 # =====================================================================
-# Funcao: classifica_backup
-# Familias reconhecidas:
-# - ALBATROZ_DIA_FULL/DIFF: concorrem como FULL ou DIFF.
-# - ALBATROZ_ddmmaaaa_hhmm: concorre como SEM_SUB.
-# - ALBATROZSUB_ddmmaaaa_hhmm: concorre como SUB.
+# Função: limpa_antigos_preservando_mensais
+# Mantem o ultimo FULL e o ultimo DIFF do periodo mensal.
 # =====================================================================
-classifica_backup() {
-    local nome="$1"
-    local data="" hora=""
-
-    backup_tipo=""
-    backup_stamp=""
-
-    if [[ "$nome" =~ ^ALBATROZ_[A-Z]{3}_(FULL|DIFF)_([0-9]{8})_([0-9]{6})\.bak$ ]]; then
-        backup_tipo="${BASH_REMATCH[1]}"
-        data="${BASH_REMATCH[2]}"
-        hora="${BASH_REMATCH[3]}"
-    elif [[ "$nome" =~ ^ALBATROZ_([0-9]{2})([0-9]{2})([0-9]{4})_([0-9]{2})([0-9]{2})(\..*)?$ ]]; then
-        backup_tipo="SEM_SUB"
-        data="${BASH_REMATCH[3]}${BASH_REMATCH[2]}${BASH_REMATCH[1]}"
-        hora="${BASH_REMATCH[4]}${BASH_REMATCH[5]}00"
-    elif [[ "$nome" =~ ^ALBATROZSUB_([0-9]{2})([0-9]{2})([0-9]{4})_([0-9]{2})([0-9]{2})(\..*)?$ ]]; then
-        backup_tipo="SUB"
-        data="${BASH_REMATCH[3]}${BASH_REMATCH[2]}${BASH_REMATCH[1]}"
-        hora="${BASH_REMATCH[4]}${BASH_REMATCH[5]}00"
-    else
-        return 1
-    fi
-
-    backup_stamp="${data}${hora}"
-    return 0
-}
-
-
-# =====================================================================
-# Funcao: copia_obrigatorio_remoto
-# Baixa explicitamente um arquivo escolhido no remoto, mesmo fora do max-age.
-# =====================================================================
-copia_obrigatorio_remoto() {
-    local remoto="$1"
-    local pasta="$2"
-    local nome="$3"
-
-    [[ -n "$nome" ]] || return 0
-
-    if [[ -f "$pasta/$nome" ]]; then
-        echo "Ja existe localmente: $nome"
-        return 0
-    fi
-
-    echo "Baixando obrigatorio mais recente: $nome"
-    rclone copyto "${remoto%/}/$nome" "$pasta/$nome" -P $retry $lowretry --stats 1s $timeout $multi $preserva_flag
-}
-
-
-# =====================================================================
-# Funcao: sincroniza_recentes_obrigatorios
-# Garante que os mais recentes do remoto existam localmente antes da limpeza.
-# =====================================================================
-sincroniza_recentes_obrigatorios() {
-    local remoto="$1"
-    local pasta="$2"
-    local lista_remota nome stamp
-    local ultimo_full_nome="" ultimo_full_data=""
-    local ultimo_diff_nome="" ultimo_diff_data=""
-    local ultimo_sem_sub_nome="" ultimo_sem_sub_data=""
-    local ultimo_sub_nome="" ultimo_sub_data=""
-
-    if ! lista_remota=$(rclone lsf "$remoto" --files-only); then
-        echo "Aviso: nao foi possivel listar o remoto para buscar os mais recentes obrigatorios."
-        return 0
-    fi
-
-    while IFS= read -r nome; do
-        nome="${nome%$'\r'}"
-        [[ -n "$nome" ]] || continue
-        classifica_backup "$nome" || continue
-        stamp="$backup_stamp"
-
-        if [[ "$backup_tipo" = "FULL" && "$stamp" > "$ultimo_full_data" ]]; then
-            ultimo_full_data="$stamp"
-            ultimo_full_nome="$nome"
-        elif [[ "$backup_tipo" = "DIFF" && "$stamp" > "$ultimo_diff_data" ]]; then
-            ultimo_diff_data="$stamp"
-            ultimo_diff_nome="$nome"
-        elif [[ "$backup_tipo" = "SEM_SUB" && "$stamp" > "$ultimo_sem_sub_data" ]]; then
-            ultimo_sem_sub_data="$stamp"
-            ultimo_sem_sub_nome="$nome"
-        elif [[ "$backup_tipo" = "SUB" && "$stamp" > "$ultimo_sub_data" ]]; then
-            ultimo_sub_data="$stamp"
-            ultimo_sub_nome="$nome"
-        fi
-    done <<< "$lista_remota"
-
-    copia_obrigatorio_remoto "$remoto" "$pasta" "$ultimo_full_nome"
-    copia_obrigatorio_remoto "$remoto" "$pasta" "$ultimo_diff_nome"
-    copia_obrigatorio_remoto "$remoto" "$pasta" "$ultimo_sem_sub_nome"
-    copia_obrigatorio_remoto "$remoto" "$pasta" "$ultimo_sub_nome"
-}
-
-
-# =====================================================================
-# Funcao: limpa_antigos_preservando_recentes
-# Mantem os mais recentes de cada familia reconhecida.
-# =====================================================================
-limpa_antigos_preservando_recentes() {
+limpa_antigos_preservando_mensais() {
     local pasta="$1"
     local manter="$2"
     local ultimo_full=""
     local ultimo_full_data=""
     local ultimo_diff=""
     local ultimo_diff_data=""
-    local ultimo_sem_sub=""
-    local ultimo_sem_sub_data=""
-    local ultimo_sub=""
-    local ultimo_sub_data=""
-    local arq nome stamp
+    local arq nome tipo data hora stamp
 
     if [[ ! -d "$pasta" ]]; then
         echo "Erro: pasta '$pasta' não existe."
@@ -193,31 +87,35 @@ limpa_antigos_preservando_recentes() {
     for arq in "$pasta"/*; do
         [[ -f "$arq" ]] || continue
         nome=$(basename "$arq")
-        classifica_backup "$nome" || continue
-        stamp="$backup_stamp"
+        tipo=""; data=""; hora=""
 
-        if [[ "$backup_tipo" = "FULL" && "$stamp" > "$ultimo_full_data" ]]; then
+        if [[ "$nome" =~ ^ALBATROZ_[A-Z]{3}_(FULL|DIFF)_([0-9]{8})_([0-9]{6})\.bak$ ]]; then
+            tipo="${BASH_REMATCH[1]}"
+            data="${BASH_REMATCH[2]}"
+            hora="${BASH_REMATCH[3]}"
+        elif [[ "$nome" =~ ^SQL_(FULL|DIFF)_([0-9]{4})-([0-9]{2})-([0-9]{2})[[:space:]]([0-9]{2})-([0-9]{2})-([0-9]{2})\.bak$ ]]; then
+            tipo="${BASH_REMATCH[1]}"
+            data="${BASH_REMATCH[2]}${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
+            hora="${BASH_REMATCH[5]}${BASH_REMATCH[6]}${BASH_REMATCH[7]}"
+        fi
+
+        [[ -n "$tipo" ]] || continue
+        stamp="${data}${hora}"
+
+        if [[ "$tipo" = "FULL" && "$stamp" > "$ultimo_full_data" ]]; then
             ultimo_full_data="$stamp"
             ultimo_full="$arq"
-        elif [[ "$backup_tipo" = "DIFF" && "$stamp" > "$ultimo_diff_data" ]]; then
+        elif [[ "$tipo" = "DIFF" && "$stamp" > "$ultimo_diff_data" ]]; then
             ultimo_diff_data="$stamp"
             ultimo_diff="$arq"
-        elif [[ "$backup_tipo" = "SEM_SUB" && "$stamp" > "$ultimo_sem_sub_data" ]]; then
-            ultimo_sem_sub_data="$stamp"
-            ultimo_sem_sub="$arq"
-        elif [[ "$backup_tipo" = "SUB" && "$stamp" > "$ultimo_sub_data" ]]; then
-            ultimo_sub_data="$stamp"
-            ultimo_sub="$arq"
         fi
     done
 
-    [[ -n "$ultimo_full" ]] && echo "Preservando FULL mais recente: $(basename "$ultimo_full")"
-    [[ -n "$ultimo_diff" ]] && echo "Preservando DIFF mais recente: $(basename "$ultimo_diff")"
-    [[ -n "$ultimo_sem_sub" ]] && echo "Preservando ALBATROZ sem SUB mais recente: $(basename "$ultimo_sem_sub")"
-    [[ -n "$ultimo_sub" ]] && echo "Preservando SUB mais recente: $(basename "$ultimo_sub")"
+    [[ -n "$ultimo_full" ]] && echo "Preservando FULL mensal: $(basename "$ultimo_full")"
+    [[ -n "$ultimo_diff" ]] && echo "Preservando DIFF mensal: $(basename "$ultimo_diff")"
 
     while IFS= read -r -d '' arq; do
-        if [[ "$arq" = "$ultimo_full" || "$arq" = "$ultimo_diff" || "$arq" = "$ultimo_sem_sub" || "$arq" = "$ultimo_sub" ]]; then
+        if [[ "$arq" = "$ultimo_full" || "$arq" = "$ultimo_diff" ]]; then
             echo "Mantido: $(basename "$arq")"
             continue
         fi
@@ -228,9 +126,8 @@ limpa_antigos_preservando_recentes() {
 }
 
 
-# Garante os mais recentes do remoto e depois limpa os antigos locais.
-sincroniza_recentes_obrigatorios "$perfil" "$destino"
-limpa_antigos_preservando_recentes "$destino" "$manter"
+# Limpa antigos preservando o fechamento mensal
+limpa_antigos_preservando_mensais "$destino" "$manter"
 
 
 
